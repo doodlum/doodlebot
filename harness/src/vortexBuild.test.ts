@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { acquireLease, addInstancePid, checkoutResource, readLease, type LeaseEnv } from "./lease";
 import { buildCheckout, buildEnvironment, restoreChanged, saveFiles } from "./vortexBuild";
@@ -13,6 +13,8 @@ let env: LeaseEnv;
 let alive: Set<number>;
 
 beforeEach(() => {
+  // an operator's own pnpm override would change which command runs
+  vi.stubEnv("VORTEX_AI_PNPM", "");
   dir = fs.mkdtempSync(path.join(os.tmpdir(), "vortex-build-test-"));
   checkout = path.join(dir, "vortex");
   fs.mkdirSync(path.join(checkout, "src", "main", "build"), { recursive: true });
@@ -27,6 +29,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -79,6 +82,32 @@ describe("building a checkout", () => {
     expect(fs.readFileSync(path.join(checkout, "etc", "vortex.api.md"), "utf8")).toBe("api v1\n");
     // Released afterwards.
     expect(readLease(checkoutResource(checkout), env)).toBeUndefined();
+  });
+
+  it("builds main directly when the build left out a worker main's build script bundles", async () => {
+    const main = path.join(checkout, "src", "main");
+    fs.writeFileSync(
+      path.join(main, "build.mjs"),
+      `await bundleWorker("./src/hash/worker.ts", "hash-worker.cjs");
+`,
+    );
+    const runs: Array<{ command: string; cwd: string }> = [];
+    const report = await buildCheckout({
+      checkout,
+      production: false,
+      installedPnpm: "11.10.0",
+      leaseEnv: env,
+      runner: async (command, _args, options) => {
+        runs.push({ command, cwd: options.cwd });
+        // nx restored main from cache: main.cjs and the renderer, but not the worker
+        for (const name of command === "node" ? ["hash-worker.cjs"] : ["main.cjs", "renderer.js"])
+          fs.writeFileSync(path.join(main, "build", name), "");
+        return 0;
+      },
+    });
+    expect(runs.map((r) => r.command)).toEqual(["pnpm", "node"]);
+    expect(runs[1]?.cwd).toBe(main);
+    expect(report.exitCode).toBe(0);
   });
 
   it("uses the pnpm on PATH when it is the pinned version, and restores after a failed build", async () => {

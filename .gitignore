@@ -7,3 +7,6 @@ coverage/
 
 # Vortex clone this suite manages (see harness/src/source.ts)
 .vortex-src/
+
+# Per-session Vortex worktrees of .vortex-src (see harness/src/worktree.ts)
+.vortex-worktrees/

@@ -6,6 +6,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { loadConfig, type HarnessConfig } from "./config";
+import { instanceResource } from "./slots";
 import {
   attachedLeaseResources,
   buildInstanceEnv,
@@ -15,14 +16,7 @@ import {
   launchStdio,
   recordLaunchedPid,
 } from "./instance";
-import {
-  INSTANCE_RESOURCE,
-  LeaseHeldError,
-  acquireLease,
-  checkoutResource,
-  readLease,
-  type LeaseEnv,
-} from "./lease";
+import { LeaseHeldError, acquireLease, checkoutResource, readLease, type LeaseEnv } from "./lease";
 
 let dir: string;
 let checkout: string;
@@ -123,12 +117,12 @@ describe("buildInstanceEnv", () => {
 });
 
 describe("the leases a running Vortex needs", () => {
+  // Each cache's instance has a lease of its own (slots.ts); these configs share one cache.
+  const instance = (): string => instanceResource(installedConfig().cacheDir);
+
   it("are the instance alone for a released build, and the checkout too for a source build", () => {
-    expect(instanceLeaseResources(installedConfig())).toEqual([INSTANCE_RESOURCE]);
-    expect(instanceLeaseResources(devConfig())).toEqual([
-      INSTANCE_RESOURCE,
-      checkoutResource(checkout),
-    ]);
+    expect(instanceLeaseResources(installedConfig())).toEqual([instance()]);
+    expect(instanceLeaseResources(devConfig())).toEqual([instance(), checkoutResource(checkout)]);
   });
 
   it("refuse a launch from a checkout another owner has locked, holding nothing", () => {
@@ -136,7 +130,7 @@ describe("the leases a running Vortex needs", () => {
     acquireLease(checkoutResource(checkout), "rebuilder", { ...env, pid: 1001 });
     expect(() => claimInstanceLease(devConfig(), "launch Vortex", env)).toThrow(LeaseHeldError);
     // The instance it took first was given back.
-    expect(readLease(INSTANCE_RESOURCE, env)).toBeUndefined();
+    expect(readLease(instance(), env)).toBeUndefined();
   });
 
   it("lock the checkout while Vortex runs from it, after the launching command exits", () => {
@@ -145,7 +139,7 @@ describe("the leases a running Vortex needs", () => {
     recordLaunchedPid(config, 4242, env);
     hold.release();
     // `up` has exited; its Vortex still holds both.
-    for (const resource of [INSTANCE_RESOURCE, checkoutResource(checkout)]) {
+    for (const resource of [instance(), checkoutResource(checkout)]) {
       expect(readLease(resource, env)).toMatchObject({
         live: true,
         lease: { owner: "kit-agent2" },
@@ -156,19 +150,19 @@ describe("the leases a running Vortex needs", () => {
     ).toThrow(/held by "kit-agent2"/);
     forgetLaunchedPid(config, 4242, env);
     expect(readLease(checkoutResource(checkout), env)).toBeUndefined();
-    expect(readLease(INSTANCE_RESOURCE, env)).toBeUndefined();
+    expect(readLease(instance(), env)).toBeUndefined();
   });
 
   it("for a command attaching to a running Vortex, are its checkout, not the configured one", () => {
     const config = installedConfig();
-    expect(attachedLeaseResources(config)).toEqual([INSTANCE_RESOURCE]);
+    expect(attachedLeaseResources(config)).toEqual([instance()]);
     // Written by the launch: this process stands in for the running Vortex.
     fs.mkdirSync(config.cacheDir, { recursive: true });
     fs.writeFileSync(
       path.join(config.cacheDir, "instance.json"),
       JSON.stringify({ pid: process.pid, sourceDir: checkout }),
     );
-    expect(attachedLeaseResources(config)).toEqual([INSTANCE_RESOURCE, checkoutResource(checkout)]);
+    expect(attachedLeaseResources(config)).toEqual([instance(), checkoutResource(checkout)]);
     acquireLease(checkoutResource(checkout), "rebuilder", { ...env, pid: 1001 });
     expect(() =>
       claimInstanceLease(config, "ai:test:collection-scale", env, { attach: true }),
@@ -178,7 +172,7 @@ describe("the leases a running Vortex needs", () => {
       path.join(config.cacheDir, "instance.json"),
       JSON.stringify({ pid: 2 ** 30, sourceDir: checkout }),
     );
-    expect(attachedLeaseResources(config)).toEqual([INSTANCE_RESOURCE]);
+    expect(attachedLeaseResources(config)).toEqual([instance()]);
   });
 
   it("join a checkout lock the same owner already holds, and take the instance with it", () => {
@@ -189,13 +183,31 @@ describe("the leases a running Vortex needs", () => {
     });
     const hold = claimInstanceLease(devConfig(), "launch Vortex", env);
     expect(hold.joined).toBe(false);
-    expect(readLease(INSTANCE_RESOURCE, env)?.lease.owner).toBe("kit-agent2");
+    expect(readLease(instance(), env)?.lease.owner).toBe("kit-agent2");
     // A second owner is now refused the instance as well as the checkout.
     expect(() => claimInstanceLease(devConfig({ owner: "other" }), "launch Vortex", env)).toThrow(
       LeaseHeldError,
     );
     hold.release();
     expect(readLease(checkoutResource(checkout), env)?.lease.mode).toBe("explicit");
+  });
+
+  it("let two caches, two agents' slots, run a Vortex each without refusing one another", () => {
+    const other = fs.mkdtempSync(path.join(os.tmpdir(), "vortex-ai-slot-"));
+    try {
+      const mine = claimInstanceLease(installedConfig({ owner: "kit-agent2" }), "up", env);
+      const theirs = claimInstanceLease(
+        installedConfig({ owner: "other", cacheDir: other }),
+        "up",
+        env,
+      );
+      expect(readLease(instance(), env)?.lease.owner).toBe("kit-agent2");
+      expect(readLease(instanceResource(other), env)?.lease.owner).toBe("other");
+      theirs.release();
+      mine.release();
+    } finally {
+      fs.rmSync(other, { recursive: true, force: true });
+    }
   });
 });
 

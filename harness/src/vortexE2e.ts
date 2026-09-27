@@ -25,15 +25,18 @@ import { parseEnv } from "node:util";
 
 import { REPO_ROOT } from "./config";
 import {
-  INSTANCE_RESOURCE,
   checkoutResource,
   holdLease,
+  isInstanceResource,
+  listLeases,
   processAlive,
-  readLease,
   resolveOwner,
   type HoldResult,
   type LeaseEnv,
 } from "./lease";
+
+/** Held for a whole vortex-e2e run, so two runs never overlap. */
+export const VORTEX_E2E_RESOURCE = "vortex-e2e";
 import { readJsonFile } from "./jsonFile";
 import { git, gitOk, parseUnifiedDiff, sha256 } from "./prPreflight";
 import { childEnv } from "./source";
@@ -973,7 +976,13 @@ export async function runVortexE2e(options: VortexE2eOptions): Promise<VortexE2e
       `[lease] reclaimed stale ${state.lease.resource} lease from "${state.lease.owner}" (${state.reason})`,
     );
   leases.push(
-    holdLease(INSTANCE_RESOURCE, owner, { ...options.leaseEnv, purpose: "vortex-e2e", onReclaim }),
+    // Its own lease, not a slot's instance: E2E runs wait for each other (they register OS
+    // protocol handlers and time animations), but harness instances in any slot keep running.
+    holdLease(VORTEX_E2E_RESOURCE, owner, {
+      ...options.leaseEnv,
+      purpose: "vortex-e2e",
+      onReclaim,
+    }),
   );
   let session: PatchSession | undefined;
   const controller = new AbortController();
@@ -995,9 +1004,10 @@ export async function runVortexE2e(options: VortexE2eOptions): Promise<VortexE2e
         onReclaim,
       }),
     );
-    const running = (
-      readLease(INSTANCE_RESOURCE, options.leaseEnv)?.lease.instancePids ?? []
-    ).filter(options.leaseEnv?.isAlive ?? processAlive);
+    const running = listLeases(options.leaseEnv)
+      .filter((state) => isInstanceResource(state.lease.resource))
+      .flatMap((state) => state.lease.instancePids)
+      .filter(options.leaseEnv?.isAlive ?? processAlive);
     if (running.length > 0) {
       notes.push(
         `a harness Vortex (pid ${running.join(", ")}) was running during the run; timings may be affected`,

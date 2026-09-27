@@ -53,11 +53,19 @@ export function parsePnpmVersion(packageManager: string | undefined): string {
   return match[1];
 }
 
-/** Use the installed pnpm only when it exactly matches; otherwise bootstrap the pinned version. */
+/**
+ * Use the installed pnpm only when it exactly matches; otherwise bootstrap the pinned version.
+ * `VORTEX_AI_PNPM` names a pnpm of the pinned version to use instead of `pnpm dlx`, for a
+ * machine where dlx can't run (KNOWLEDGE.md, "No `pnpm`, or only Node 20").
+ */
 export function selectPnpmCommand(
   wantedVersion: string,
   installedVersion: string | undefined,
+  override: string | undefined = process.env.VORTEX_AI_PNPM,
 ): PackageManagerCommand {
+  if (override !== undefined && override.trim() !== "" && installedVersion !== wantedVersion) {
+    return { cmd: override.trim(), args: [], version: wantedVersion, exact: true };
+  }
   if (installedVersion === wantedVersion) {
     return { cmd: "pnpm", args: [], version: wantedVersion, exact: true };
   }
@@ -103,15 +111,21 @@ export function childEnv(): NodeJS.ProcessEnv {
  * `CI=1` keeps anything downstream from stopping on an interactive prompt there
  * is no terminal to answer.
  */
+/** Windows runs pnpm and any `.cmd` shim only through a shell. */
+export function needsShell(cmd: string): boolean {
+  return process.platform === "win32" && (cmd === "pnpm" || /.(cmd|bat)$/i.test(cmd));
+}
+
 export function runStreaming(
   cmd: string,
   args: string[],
   options: { cwd?: string; label: string },
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, {
+    const shell = needsShell(cmd);
+    const child = spawn(shell && cmd.includes(" ") ? `"${cmd}"` : cmd, args, {
       cwd: options.cwd,
-      shell: cmd === "pnpm" && process.platform === "win32",
+      shell,
       stdio: "inherit",
       env: childEnv(),
     });
@@ -286,6 +300,10 @@ export async function resolveVortexRepo(): Promise<ForkInfo> {
 export interface EnsureSourceOptions {
   /** Re-fetch and fast-forward an existing clone. */
   update?: boolean;
+  /** buildVortexSource: the checkout to build, when not .vortex-src (a worktree). */
+  dir?: string;
+  /** buildVortexSource: install dependencies only. */
+  installOnly?: boolean;
   /** Progress reporting. */
   onProgress?: (message: string) => void;
 }
@@ -343,7 +361,7 @@ export async function ensureVortexSource(options: EnsureSourceOptions = {}): Pro
  */
 export async function buildVortexSource(options: EnsureSourceOptions = {}): Promise<void> {
   const report = options.onProgress ?? ((): void => undefined);
-  const dir = vortexSourceDir();
+  const dir = options.dir ?? vortexSourceDir();
   if (!hasVortexSource(dir)) {
     throw new ForkError(`No Vortex clone at ${dir}. Run \`vortex-ai source\` first.`);
   }
@@ -361,6 +379,10 @@ export async function buildVortexSource(options: EnsureSourceOptions = {}): Prom
     cwd: dir,
     label: "Installing Vortex's dependencies",
   });
+  if (options.installOnly === true) {
+    report("dependencies installed");
+    return;
+  }
 
   report("building renderer and main");
   try {
@@ -383,13 +405,46 @@ export async function buildVortexSource(options: EnsureSourceOptions = {}): Prom
     report("main built — the earlier failure was in a bundled extension");
   }
 
+  // An nx cache hit restores only the outputs a target declares, and @vortex/main's list has
+  // lagged its build script: hash-worker.cjs was missing from it, so a cached build ran until the
+  // first install and then failed to find it (KNOWLEDGE.md). Rebuild main directly when so.
+  const missing = missingBuildOutputs(dir);
+  if (missing.length > 0) {
+    report(`the build left out ${missing.join(", ")}; building main's own bundle directly`);
+    await runStreaming("node", ["./build.mjs"], {
+      cwd: path.join(dir, "src", "main"),
+      label: "Building main",
+    });
+    const still = missingBuildOutputs(dir);
+    if (still.length > 0)
+      throw new ForkError(`The build did not produce ${still.join(", ")} in src/main/build.`);
+  }
+
   report("build complete");
+}
+
+/**
+ * What a source build must have produced for the harness to launch it and use it, that
+ * src/main/build lacks: main.cjs, renderer.js, and every worker main's build script bundles
+ * (`bundleWorker(…, "<name>")` in src/main/build.mjs).
+ */
+export function missingBuildOutputs(dir = vortexSourceDir()): string[] {
+  const build = path.join(dir, "src", "main", "build");
+  let script = "";
+  try {
+    script = fs.readFileSync(path.join(dir, "src", "main", "build.mjs"), "utf8");
+  } catch {
+    // An older layout without the script: check the two bundles alone.
+  }
+  const workers = [...script.matchAll(/bundleWorker\([^,]+,\s*["']([^"']+)["']/g)].map(
+    (m) => m[1]!,
+  );
+  return ["main.cjs", "renderer.js", ...workers].filter(
+    (name) => !fs.existsSync(path.join(build, name)),
+  );
 }
 
 /** The outputs the harness needs in order to launch a source build. */
 export function buildArtifactsPresent(dir = vortexSourceDir()): boolean {
-  const build = path.join(dir, "src", "main", "build");
-  return (
-    fs.existsSync(path.join(build, "main.cjs")) && fs.existsSync(path.join(build, "renderer.js"))
-  );
+  return missingBuildOutputs(dir).length === 0;
 }

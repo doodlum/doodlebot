@@ -39,6 +39,9 @@ import { VortexMcpClient } from "./mcpClient";
 import { requireOAuth } from "./auth";
 import { bethesdaSandboxPaths } from "./bethesdaSandbox";
 import { resetDisposableGameData } from "./sandbox";
+import { importLogin } from "./loginImport";
+import { DEFAULT_CACHE_DIR } from "./paths";
+import { missingBuildOutputs } from "./source";
 
 /**
  * Bumped when a change here makes previously-cached snapshots wrong (a different
@@ -203,7 +206,19 @@ export async function bootstrap(
   } else if (apiKey === ANONYMOUS)
     report("no API key configured; cached OAuth is restored automatically when available");
 
+  const checkout = config.target.kind === "dev" ? config.target.sourceDir : undefined;
+  const missing = checkout === undefined ? [] : missingBuildOutputs(checkout);
+  if (missing.length > 0)
+    throw new ConfigError(
+      `${checkout!} is not fully built: src/main/build lacks ${missing.join(", ")}. Vortex would ` +
+        `start and then fail at the first install. Build it: \`vortex-ai build --checkout ${checkout!}\`` +
+        ` (or \`node build.mjs\` in its src/main).`,
+    );
+
   fs.mkdirSync(config.cacheDir, { recursive: true });
+  const seeded = seedSlotLogin(config);
+  if (seeded !== undefined)
+    report(`slot ${String(config.slot)}: copied the saved login from ${seeded}`);
 
   // An instance left over from an earlier run holds both the MCP port and the
   // working directory; every later step would fail on that rather than on
@@ -457,4 +472,22 @@ async function buildSnapshot(
   };
   fs.writeFileSync(path.join(snapshot, MARKER_FILE), JSON.stringify(marker, null, 2));
   report(`cold: snapshot cached at ${snapshot}`);
+}
+
+/**
+ * A new slot (slots.ts) starts with the machine's saved login, as `login-import` would copy
+ * it: its first `up` needs no interactive login. Only when the slot has none of its own; after
+ * that each slot's copy is refreshed by its own Vortex and the two diverge (KNOWLEDGE.md).
+ * Returns the cache it was copied from, or undefined when nothing was copied.
+ */
+export function seedSlotLogin(config: HarnessConfig): string | undefined {
+  if (path.resolve(config.cacheDir) === path.resolve(DEFAULT_CACHE_DIR)) return undefined;
+  const destination = authCacheFile(config);
+  if (fs.existsSync(destination)) return undefined;
+  try {
+    return importLogin(DEFAULT_CACHE_DIR, destination);
+  } catch {
+    // No usable login in the default cache: the slot starts logged out, as any cache does.
+    return undefined;
+  }
 }

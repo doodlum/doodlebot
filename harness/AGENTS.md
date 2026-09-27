@@ -173,13 +173,55 @@ intact; the harness does not blindly kill a recorded PID and then certify a
 possibly unflushed profile. Close the identified harness window before retrying.
 A server from another cache is not stopped just because it occupies the same port.
 
-Use `--cache-dir <dir> --port <n> --cdp-port <n>` for another independent instance.
-Keep those flags consistent across commands. Both ports must be free.
+For another independent instance, take a slot (next section) rather than choosing
+`--cache-dir <dir> --port <n> --cdp-port <n>` by hand. Either way, keep the flags the same
+across commands. Both ports must be free.
 
-## The instance lease: one agent drives Vortex at a time
+## Parallel sessions: a worktree and a slot per agent
 
-Only one harness Vortex runs per machine, and several agents may use this kit. A
-machine-wide lease (`~/.vortex-ai/leases`, shared by every kit checkout; override with
+Several agents can each run their own Vortex on their own project at the same time. Two Vortex
+processes coexist when their profiles (`userData`) and ports differ, so each agent needs its own
+checkout, cache and ports:
+
+```powershell
+pnpm run ai -- worktree add fix-a --base upstream/master     # .vortex-worktrees/fix-a, installed and built
+pnpm run ai -- up --owner fix-a --worktree fix-a --slot auto --bethesda-sandbox
+pnpm run ai -- slots                                        # who has which slot, and whether it runs
+pnpm run ai -- down --owner fix-a --slot auto
+pnpm run ai -- worktree remove fix-a                        # the branch stays
+```
+
+- **Slots** (`slots.ts`). Slot 0 is `harness/.cache` and `harness/.artifacts` on MCP 3701 and
+  CDP 9222, what every command uses without `--slot`. Slot n is `harness/.slots/<n>/cache` and
+  `…/artifacts` on 3701+10n and 9222+10n, with its own instance lease (`instance:<cache>`), so two
+  slots never refuse each other. `--slot auto` (or `VORTEX_AI_SLOT=auto`) gives the owner a slot
+  of its own from 1 up, recorded in `<lease dir>/slots.json`, and the same one on every later
+  command, warm profile included. It needs an owner. Once all 19 are given out, a new owner takes
+  the least recently used one that isn't running. `--slot <n>` picks one outright. An explicit
+  `--cache-dir`, `--port` or `--cdp-port` still wins over what the slot gives.
+- **Pass the same `--owner` and `--slot` to every command.** Scripts run by `pnpm run ai:test:*`
+  read `VORTEX_AI_SLOT` and `VORTEX_AI_OWNER`; `script` passes its instance to the script it runs.
+- **Login.** A slot's first `up` copies the saved OAuth login from slot 0's cache, as
+  `login-import` would. After that the copies are separate, and each Vortex refreshes its own.
+  If Nexus refuses one (rotated refresh tokens), run `login-import --slot <n> --force`.
+- **Worktrees** (`worktree.ts`) are git worktrees of `.vortex-src` in `.vortex-worktrees/<name>`,
+  sharing its object store. `add` fetches the base (default `upstream/master`), creates the branch
+  (default: the name) or checks out an existing one, then installs and builds with the checkout's
+  pinned pnpm (`--no-build`, `--no-install`). `--worktree <name>` on any command is `--dev-dir` for
+  it. `remove` refuses while a Vortex runs from the worktree, or with uncommitted changes unless
+  `--force`. `list` shows them.
+- **Shared by all:** the extension build in `dist/` (build it once, from the orchestrator), the
+  pnpm store, and the machine's CPU. Don't take timings while other slots are busy.
+- `vortex-e2e` holds a lease of its own (`vortex-e2e`), so E2E runs wait for each other but not
+  for instances.
+
+Who edits the kit when several agents work at once: only the orchestrator. See WORKFLOWS.md,
+"Several issues at once".
+
+## The instance lease: one agent drives each Vortex
+
+One harness Vortex runs per cache (per slot, above), and several agents may use this kit. A
+lease per instance (`~/.vortex-ai/leases`, shared by every kit checkout; override with
 `VORTEX_AI_LEASE_DIR`) says who has it. The owner is `--owner <name>`, else
 `VORTEX_AI_OWNER`, else `anonymous`. Use one owner name for a whole session.
 
@@ -726,6 +768,7 @@ under `harness/.artifacts`:
 | --------------------------------------------------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `ai:test:collection-scale -- --members <n>`               | sandbox        | Installs an offline collection of n already-installed mods. Reports wall time, long tasks, CPU hotspots (`.cpuprofile`) and Vortex's step timings (adding member rules, gathering dependencies, updating rules). Fails on a freeze over 10s. Options below.                   |
 | `ai:test:plugins-page -- --plugins <n>`                   | fake Fallout 4 | On the Plugins page with n plugins: rendered rows, and blocking while scrolling, filtering, clearing and toggling a plugin, checking the row follows the toggle. The load order is made deterministic first (below; `--vortex-order` keeps Vortex's).                         |
+| `ai:test:plugins-mod-link -- --mods <n>`                  | fake Fallout 4 | Clicks the Plugins page's Mod column link for the plugin whose mod sorts last among n seeded mods (default 300), and fails unless the Mods page scrolled that mod's row into the window. Stock 2.7 fails it (KNOWLEDGE.md, sticky-header scroll-to).                          |
 | `ai:test:download-churn -- --downloads <n> --seconds <s>` | any            | Throttled downloads from a local server (`downloadServer.ts`). Reports persist:diff per minute and per hive, slow writes, dispatches and long tasks. A measurement; it has no pass/fail.                                                                                      |
 | `ai:test:mods-scroll -- --mods <n> [--conflicts <pairs>]` | sandbox        | The Mods table under real wheel input: rows on arrival, longest frame gap during a flick, blank rows after it settles, dropdown direction and clipping at both edges, noShrink Status width, rows left rendered after a scroll-through, the conflict editor's virtualisation. |
 
@@ -820,23 +863,25 @@ have these controls yet. `realWheel(config, selector, deltaY, { control: true })
 is the reusable shortcut input path; `ui_scroll` changes scroll position and
 does not emulate a native wheel gesture.
 
-`pnpm run ai:test:panels` checks the panel-only layout in a running source
-build with `--bethesda-sandbox`. It covers the placement dropdown, a new-panel
-chooser restricted to the current sidebar, sidebar focus and replacement,
-keyboard resizing, four-panel limit, and separate Home and game layouts.
-Match `VORTEX_AI_OWNER` to the running instance. It saves and restores the
-existing Home and game workspaces. Every open panel page keeps the sidebar's
-selected background; only the focused one has an outline and `aria-current`.
-After a clean `down` and `up --bethesda-sandbox`, run with `--verify-saved`
-to compare the restored layout with the one recorded by the normal run.
+`pnpm run ai:test:panels` checks the right-hand split view in a running source
+build with `--bethesda-sandbox`. Match `VORTEX_AI_OWNER` to the instance owner.
+The script saves and restores the existing Home and per-sidebar game workspaces
+and window size. It checks that the sidebar page's Dock right toggle animates
+the new pane with the same width transition as the sidebar, that the headerless
+chooser is centered and restricted to the current context, and that closing
+forgets the partner. It verifies **Close {page name}**, the absence of a toggle
+in the opened right-hand page, independent saved layouts for each sidebar page,
+automatic animated close and fading toggle when two panes no longer fit,
+keyboard resizing that keeps both panes at least 440px wide at intermediate
+ratios, scrollable extension-owned sticky headers at the minimum width,
+drag-to-edge collapse, and Home scope. The toggle is
+`[data-split-view-toggle]` with `aria-pressed`; the chooser is
+`[data-panel-chooser="panel"]`. Legacy pages have no temporary panel header.
+There are no tab controls or pop-outs.
 
 For panel-local actions, `clickByName(mcp, query, { selector, index? })` scopes
 the fresh MCP snapshot. This avoids missing controls when a large table consumes
-the page-wide node budget. Modern pages put Close in the page header; older
-pages and the empty chooser use a fallback action row. The new panel chooser is
-`[data-panel-chooser="panel"]`. There are no tab controls or pop-outs.
-Click actual content inside each panel: page content is rendered through stable
-portals and must activate the surrounding panel too.
+the page-wide node budget. Page content is rendered through stable portals.
 
 Run responsive checks in each relevant state, with distinct artifact labels.
 Test both width and height, inspect actual sizes after OS clamping, and visually
@@ -858,21 +903,23 @@ live schemas with `tools --json` after changing tool registration.
 
 ## Configuration and recovery
 
-| Variable                                   | Purpose/default                                      |
-| ------------------------------------------ | ---------------------------------------------------- |
-| `VORTEX_AI_EXE`                            | Installed Vortex executable, otherwise auto-detected |
-| `VORTEX_AI_DEV_DIR`                        | Explicit Vortex source directory                     |
-| `VORTEX_AI_INSTALLED`                      | `1` forces installed Vortex, including tests         |
-| `VORTEX_AI_GAME_ID`, `VORTEX_AI_GAME_PATH` | Game and install path                                |
-| `VORTEX_AI_CACHE_DIR`                      | Profiles/login cache; default `harness/.cache`       |
-| `VORTEX_AI_ARTIFACT_DIR`                   | Screenshots/reports; default `harness/.artifacts`    |
-| `VORTEX_MCP_PORT`, `VORTEX_AI_CDP_PORT`    | MCP/CDP; default 3701/9222                           |
-| `VORTEX_MCP_TOKEN`                         | Bearer token shared by harness and MCP client        |
-| `VORTEX_AI_NEXUS_API_KEY`                  | Optional legacy key; sandboxes need `--with-api-key` |
-| `VORTEX_AI_HEADLESS`                       | Hide window; screenshots may be blank                |
-| `VORTEX_AI_OWNER`                          | Lease owner when `--owner` is absent; `anonymous`    |
-| `VORTEX_AI_LEASE_DIR`                      | Lease files; default `~/.vortex-ai/leases`           |
-| `VORTEX_AI_KIT`                            | Set by `script`: the `file://` URL of `kit.ts`       |
+| Variable                                   | Purpose/default                                                            |
+| ------------------------------------------ | -------------------------------------------------------------------------- |
+| `VORTEX_AI_EXE`                            | Installed Vortex executable, otherwise auto-detected                       |
+| `VORTEX_AI_DEV_DIR`                        | Explicit Vortex source directory                                           |
+| `VORTEX_AI_INSTALLED`                      | `1` forces installed Vortex, including tests                               |
+| `VORTEX_AI_GAME_ID`, `VORTEX_AI_GAME_PATH` | Game and install path                                                      |
+| `VORTEX_AI_CACHE_DIR`                      | Profiles/login cache; default `harness/.cache`                             |
+| `VORTEX_AI_ARTIFACT_DIR`                   | Screenshots/reports; default `harness/.artifacts`                          |
+| `VORTEX_MCP_PORT`, `VORTEX_AI_CDP_PORT`    | MCP/CDP; default 3701/9222                                                 |
+| `VORTEX_MCP_TOKEN`                         | Bearer token shared by harness and MCP client                              |
+| `VORTEX_AI_NEXUS_API_KEY`                  | Optional legacy key; sandboxes need `--with-api-key`                       |
+| `VORTEX_AI_HEADLESS`                       | Hide window; screenshots may be blank                                      |
+| `VORTEX_AI_OWNER`                          | Lease owner when `--owner` is absent; `anonymous`                          |
+| `VORTEX_AI_SLOT`                           | Instance slot (`0`–`19` or `auto`) when `--slot` is absent                 |
+| `VORTEX_AI_PNPM`                           | A pnpm of the Vortex checkout's pinned version, used instead of `pnpm dlx` |
+| `VORTEX_AI_LEASE_DIR`                      | Lease files; default `~/.vortex-ai/leases`                                 |
+| `VORTEX_AI_KIT`                            | Set by `script`: the `file://` URL of `kit.ts`                             |
 
 Run `doctor` with the same setup flags when prerequisites are unclear. No UI write
 tools means Vortex started without a token. HTTP 403 means a token/host/origin

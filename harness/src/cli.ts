@@ -21,6 +21,7 @@ import {
   REPO_ROOT,
   loadConfig,
   resolveTargetSafely,
+  type ConfigOverrides,
   type HarnessConfig,
 } from "./config";
 import { runDoctor, formatDoctorReport } from "./doctor";
@@ -53,7 +54,6 @@ import { installCollection } from "./collections";
 import { deployMods, needsDeployment, purgeGame } from "./deployment";
 import { runE2e } from "./e2e";
 import {
-  INSTANCE_RESOURCE,
   acquireLeases,
   checkoutResource,
   formatLeaseStates,
@@ -66,6 +66,8 @@ import {
   type ReleaseResult,
 } from "./lease";
 import { runUnderLease } from "./leaseCommand";
+import { formatSlots, instanceResource, listSlots, parseSlot } from "./slots";
+import { addWorktree, listWorktrees, removeWorktree, worktreeDir } from "./worktree";
 import { importLogin } from "./loginImport";
 import {
   VortexE2eError,
@@ -84,16 +86,20 @@ import {
 } from "./source";
 
 function configFrom(flags: ParsedArgs["flags"]): HarnessConfig {
-  const overrides: Partial<HarnessConfig> = {};
+  const overrides: ConfigOverrides = {};
   if (typeof flags.game === "string") overrides.gameId = flags.game;
   if (typeof flags["game-path"] === "string") overrides.gamePath = flags["game-path"];
-  if (
-    typeof flags["dev-dir"] === "string" ||
-    typeof flags.exe === "string" ||
-    flags.installed === true
-  ) {
+  if (typeof flags.worktree === "string" && typeof flags["dev-dir"] === "string")
+    throw new ConfigError("Choose one of --worktree and --dev-dir.");
+  const devDir =
+    typeof flags.worktree === "string"
+      ? worktreeDir(flags.worktree)
+      : typeof flags["dev-dir"] === "string"
+        ? flags["dev-dir"]
+        : undefined;
+  if (devDir !== undefined || typeof flags.exe === "string" || flags.installed === true) {
     overrides.target = resolveTargetSafely({
-      devDir: typeof flags["dev-dir"] === "string" ? flags["dev-dir"] : undefined,
+      devDir,
       exe: typeof flags.exe === "string" ? flags.exe : undefined,
       preferInstalled: flags.installed === true,
     });
@@ -104,6 +110,7 @@ function configFrom(flags: ParsedArgs["flags"]): HarnessConfig {
   if (flags.headless === true) overrides.headless = true;
   if (flags.production === true) overrides.production = true;
   if (typeof flags.owner === "string") overrides.owner = flags.owner;
+  if (typeof flags.slot === "string") overrides.slot = parseSlot(flags.slot);
   const config = loadConfig(overrides);
   if (flags.sandbox === true && flags["bethesda-sandbox"] === true) {
     throw new ConfigError("Choose one of --sandbox and --bethesda-sandbox.");
@@ -202,7 +209,20 @@ Instance lifecycle
     --compare <json>     Diff against an earlier report: regressions vs pre-existing
     --json               Print the report as JSON (Playwright's output goes to stderr)
 
-Leases (one harness Vortex per machine; several agents may share the kit)
+Parallel sessions (harness/AGENTS.md, "Parallel sessions")
+  --slot <n|auto>        Instance slot: its own cache, artifacts, ports and instance lease.
+                         0 (default) is harness/.cache on 3701/9222; n uses harness/.slots/<n>
+                         on 3701+10n/9222+10n. auto: this owner's own slot, kept across
+                         commands (needs --owner). Or VORTEX_AI_SLOT. Pass it to every command.
+  slots                  Every slot: who was given it, whether its Vortex runs (--json)
+  worktree add <name>    A Vortex worktree of .vortex-src for one session's work, in
+                         .vortex-worktrees/<name>: [--base <ref>, default upstream/master]
+                         [--branch <name>, default <name>] [--no-build] [--no-install]
+  worktree list          The worktrees and their branches
+  worktree remove <name> Remove one (refuses uncommitted changes without --force)
+  --worktree <name>      Use that worktree as the target, like --dev-dir
+
+Leases (one harness Vortex per cache; several agents may share the kit)
   lease status           Who holds what, live or stale (--json)
   lease acquire          Hold the instance lease: --owner <name> [--purpose <text>]
                          [--ttl <minutes>, default 60; 0 = none] [--pid <n>] [--wait <min>]
@@ -323,6 +343,11 @@ async function main(): Promise<number> {
   }
 
   if (command === "lease") return leaseCommand(positional, flags, passthrough);
+  if (command === "slots") {
+    log(formatSlots(listSlots(), flags.json === true));
+    return 0;
+  }
+  if (command === "worktree") return worktreeCommand(positional, flags);
 
   if (command === "build") {
     const checkout = typeof flags.checkout === "string" ? flags.checkout : vortexSourceDir();
@@ -450,6 +475,7 @@ async function main(): Promise<number> {
         `\nVortex is up in ${String(Math.round(result.elapsedMs / 1000))}s (${result.tier} start).`,
       );
       log(`  MCP:  ${result.instance.mcp.url}`);
+      if (config.slot !== 0) log(`  Slot: ${String(config.slot)} (${config.cacheDir})`);
       log(`  Game: ${result.game.gameId} (${result.game.gamePath})`);
       log(`\nConnect an agent:`);
       log(
@@ -872,6 +898,43 @@ async function main(): Promise<number> {
   }
 }
 
+async function worktreeCommand(positional: string[], flags: ParsedArgs["flags"]): Promise<number> {
+  const name = positional[1];
+  switch (positional[0]) {
+    case "add": {
+      if (name === undefined) throw new ConfigError("worktree add needs a name.");
+      const worktree = await addWorktree({
+        name,
+        base: typeof flags.base === "string" ? flags.base : undefined,
+        branch: typeof flags.branch === "string" ? flags.branch : undefined,
+        install: flags["no-install"] !== true,
+        build: flags["no-build"] !== true,
+        onProgress: (m) => log(`  ${m}`),
+      });
+      log(`
+Worktree ${worktree.name} on ${worktree.branch ?? "a detached HEAD"}: ${worktree.dir}`);
+      log(`  Run it:  pnpm run ai -- up --worktree ${worktree.name} --slot auto --owner <you>`);
+      return 0;
+    }
+    case "list": {
+      const worktrees = await listWorktrees();
+      if (flags.json === true) log(JSON.stringify(worktrees, null, 2));
+      else if (worktrees.length === 0) log("No worktrees. Make one with `worktree add <name>`.");
+      else
+        for (const w of worktrees)
+          log(`${w.name}: ${w.branch ?? "(detached)"} at ${w.head.slice(0, 9)}  ${w.dir}`);
+      return 0;
+    }
+    case "remove": {
+      if (name === undefined) throw new ConfigError("worktree remove needs a name.");
+      log(`Removed ${await removeWorktree(name, flags.force === true)}; its branch is kept.`);
+      return 0;
+    }
+    default:
+      throw new ConfigError("worktree takes add <name>, list or remove <name>.");
+  }
+}
+
 async function leaseCommand(
   positional: string[],
   flags: ParsedArgs["flags"],
@@ -889,14 +952,16 @@ async function leaseCommand(
   };
   const owner = resolveOwner(text("owner"));
   const checkout = text("checkout");
+  // The instance of the slot (or cache) these flags pick, as every other command sees it.
+  const instance = instanceResource(configFrom(flags).cacheDir);
   // `lease run` and `lease acquire` hold the instance and, with --checkout, that checkout too
   // (`acquire --checkout-only`: just the checkout).
   const resources =
     checkout === undefined
-      ? [INSTANCE_RESOURCE]
+      ? [instance]
       : flags["checkout-only"] === true
         ? [checkoutResource(checkout)]
-        : [INSTANCE_RESOURCE, checkoutResource(checkout)];
+        : [instance, checkoutResource(checkout)];
   const onReclaim = (state: LeaseState): void =>
     log(
       `Reclaimed a stale ${state.lease.resource} lease from "${state.lease.owner}" (${state.reason}).`,
@@ -957,7 +1022,7 @@ ${err.message}
         checkout !== undefined
           ? [one(checkoutResource(checkout))]
           : flags.force === true && text("owner") === undefined
-            ? [one(INSTANCE_RESOURCE)]
+            ? [one(instance)]
             : releaseOwnerLeases(owner, { force: flags.force === true });
       if (released.length === 0) {
         log(`"${owner}" holds no leases.`);

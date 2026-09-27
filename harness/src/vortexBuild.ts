@@ -32,7 +32,7 @@ import {
   type LeaseEnv,
 } from "./lease";
 import { bundleModeOf, type BundleMode } from "./productionMode";
-import { childEnv, parsePnpmVersion, selectPnpmCommand } from "./source";
+import { childEnv, missingBuildOutputs, parsePnpmVersion, selectPnpmCommand } from "./source";
 
 /** Tracked files Vortex's build regenerates. */
 export const GENERATED_FILES = ["etc/vortex.api.md", "etc/Dependency Report.md"];
@@ -183,6 +183,21 @@ export async function buildCheckout(options: BuildOptions): Promise<BuildReport>
         restored = restoreChanged(dir, saved);
       }
       if (restored.length > 0) report(`restored ${restored.join(", ")} (the build rewrote them)`);
+      // A build nx restored from cache can lack a worker @vortex/main doesn't declare as an
+      // output (KNOWLEDGE.md); Vortex then fails at its first install. Build main directly.
+      const missing = missingBuildOutputs(dir);
+      if (exitCode === 0 && missing.length > 0 && !missing.includes("main.cjs")) {
+        report(`the build left out ${missing.join(", ")}; running src/main/build.mjs`);
+        exitCode = await (options.runner ?? streamingRunner)("node", ["./build.mjs"], {
+          cwd: path.join(dir, "src", "main"),
+          env,
+        });
+        const still = missingBuildOutputs(dir);
+        if (exitCode === 0 && still.length > 0) {
+          report(`still missing after build.mjs: ${still.join(", ")}`);
+          exitCode = 1;
+        }
+      }
       return {
         checkout: dir,
         command,

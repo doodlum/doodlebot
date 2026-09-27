@@ -39,6 +39,8 @@
     "ai:test:large-library": "tsx harness/src/tests/large-library.e2e.ts",
     "ai:test:bethesda": "tsx harness/src/tests/bethesda.e2e.ts",
     "ai:test:collection-scale": "tsx harness/src/tests/collection-scale.e2e.ts",
+    "ai:test:parallel-sessions": "tsx harness/src/tests/parallel-sessions.e2e.ts",
+    "ai:test:plugins-mod-link": "tsx harness/src/tests/plugins-mod-link.e2e.ts",
     "ai:test:plugins-page": "tsx harness/src/tests/plugins-page.e2e.ts",
     "ai:test:download-churn": "tsx harness/src/tests/download-churn.e2e.ts",
     "ai:test:mods-scroll": "tsx harness/src/tests/mods-scroll.e2e.ts",

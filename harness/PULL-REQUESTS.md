@@ -117,7 +117,8 @@ judgment". The loop is working when the numbers other than judgment reach zero.
 The orchestrator sends each fix agent this brief, filled in:
 
 ```text
-Fix <issue/PR url> in <checkout> on branch <branch> (from <base>). Problem: <what the user sees,
+Fix <issue/PR url> as owner <name>, in the worktree <checkout> (vortex-mcp/.vortex-worktrees/<name>)
+on branch <branch> (from <base>). Problem: <what the user sees,
 reproduction, suspected cause>. Review findings to address, if any: <path to review output>.
 
 Read the checkout's AGENTS.md, CLAUDE.md, CODESTYLE.md, docs/testing.md and
@@ -129,10 +130,15 @@ everything it reports. Treat each WARN entry (callers, readers of changed state,
 and write a disposition for each one in your report. Before finishing, stop every background shell or wait loop you
 started; an orphaned `until … sleep` loop outlives you. Commit with Conventional Commits and push to origin. Never skip hooks.
 
-Do not start Vortex (no `ai:up`, `ai:test*` or E2E), edit vortex-mcp, edit the PR description, or
-use any other checkout. `ai:preflight` is allowed, because it never starts Vortex. The renderer's
-vitest environment is happy-dom, not jsdom. Report: the pushed sha, your callers, exit-path and behaviour lists, the negative
-control, the commands you ran and their results, the preflight report, and any kit or doc gaps.
+You may run Vortex from your worktree in your own slot only: pass `--owner <name> --worktree <name>
+--slot auto` to every kit command (`up`, `screenshot`, `down`, `script`), and `--slot auto` to the
+`ai:test:*` scripts through `VORTEX_AI_SLOT=auto` and `VORTEX_AI_OWNER=<name>`. `down` before you
+run `pnpm run verify` in the worktree, because verify rewrites the build the running Vortex loads. Do not
+edit vortex-mcp (its harness, KNOWLEDGE.md, skills or docs), edit the PR description, or use any
+other checkout. The renderer's vitest environment is happy-dom, not jsdom. Report: the pushed sha,
+your callers, exit-path and behaviour lists, the negative control, the commands you ran and their
+results, the preflight report, and last a **Kit lessons** section: each non-obvious behaviour you
+lost time to, missing capability you worked around, or wrong doc, with the evidence (or "none").
 ```
 
 ## Adversarial review and QA
@@ -140,8 +146,8 @@ control, the commands you ran and their results, the preflight report, and any k
 A fresh agent, with no part of the authoring context, reviews each pushed head **and tests it
 itself**. It takes nothing at face value, including the author's reproduction, numbers and tests.
 It reproduces the problem on the base, sees the fix work on the head, and tries to break the fix
-in the running app. This is the only stage besides the orchestrator that drives Vortex. It must
-hold the instance lease while it does, so it runs alone.
+in the running app. It drives Vortex in a worktree and slot of its own, so it can run while fix
+agents run theirs.
 
 Send it this brief, filled in:
 
@@ -149,14 +155,17 @@ Send it this brief, filled in:
 QA and review Vortex PR <url> (branch <branch>, head <sha>, base <base sha>). You did not write it.
 Assume it is wrong until your own testing shows otherwise. Read the checkout's AGENTS.md,
 CODESTYLE.md and docs/testing.md, and vortex-mcp's harness/AGENTS.md, KNOWLEDGE.md and
-harness/PULL-REQUESTS.md. Checkout: <dir>. Do not commit, push, edit the PR, or edit
-vortex-mcp. Hold the instance lease for every Vortex, E2E or verify run, as owner <qa-name>:
-`pnpm run ai -- lease acquire --owner <qa-name> --purpose "QA <pr>" --ttl 120 --checkout <dir>`
+harness/PULL-REQUESTS.md. Checkout: your own worktree <dir> (vortex-mcp/.vortex-worktrees/<qa-name>).
+Do not commit, push, edit the PR, or edit vortex-mcp. Pass `--owner <qa-name> --worktree <qa-name>
+--slot auto` to every kit command (`up`, `down`; `vortex-e2e --checkout <dir>`); for the `ai:test:*` scripts set
+`VORTEX_AI_OWNER=<qa-name>` and `VORTEX_AI_SLOT=auto`. Take
+`pnpm run ai -- lease acquire --owner <qa-name> --slot auto --purpose "QA <pr>" --ttl 120 --checkout <dir>`
 (the checkout lock stops anyone switching your checkout between your commands) before the first
-(re-run it to renew), `--owner <qa-name>` on every kit command (`up`, `down`, `vortex-e2e`),
-`pnpm run ai -- lease run --owner <qa-name> -- pnpm run verify` for verify, and
-`pnpm run ai -- lease release --owner <qa-name>` when done. If a command says another owner holds
-the lease, wait (`--wait 60`); never release theirs.
+(re-run it to renew), run verify as `pnpm run ai -- lease run --owner <qa-name> --slot auto -- pnpm run verify`
+after `down`, and `pnpm run ai -- lease release --owner <qa-name>` when done. If a command says another
+owner holds a lease, wait (`--wait 60`); never release theirs. Don't take timings while other agents
+build or run Vortex: report them as unmeasured and let the orchestrator measure. End your report with
+**Kit lessons**, as the fix brief says.
 
 Test it yourself:
 1. Reproduce the reported problem on the base, from the issue report: <issue/report text or

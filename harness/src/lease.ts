@@ -1,13 +1,15 @@
 /**
  * Machine-wide leases: who may start, stop or drive Vortex, and who may patch a checkout.
  *
- * Only one harness Vortex can usefully run on a machine at a time, and several agents
- * (an orchestrator, QA agents) may use this kit at once. Before leases, `up` quietly quit
- * whatever harness instance was running, so a second agent ended the first one's session.
+ * Several agents (an orchestrator, its fix and QA agents) may use this kit at once. Before
+ * leases, `up` quietly quit whatever harness instance was running, so a second agent ended
+ * the first one's session. Each cache runs one Vortex; agents that need one each take a slot
+ * of their own (slots.ts), whose cache has its own instance lease.
  *
  * A lease is a JSON file in a directory shared by every kit checkout on the machine
  * (`~/.vortex-ai/leases`, or `VORTEX_AI_LEASE_DIR`). Its resource key says what it guards:
- * `instance` for Vortex itself, `checkout:<path>` for a Vortex checkout a command rewrites.
+ * `instance` for the default cache's Vortex, `instance:<cache dir>` for any other cache's,
+ * `checkout:<path>` for a Vortex checkout a command rewrites.
  *
  * Two kinds:
  *   - **implicit**: taken by a command for as long as it runs. It is live while any holder
@@ -24,7 +26,7 @@ import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
 
-import { ConfigError } from "./config";
+import { ConfigError } from "./errors";
 import { parseJson } from "./jsonFile";
 
 export const ANONYMOUS_OWNER = "anonymous";
@@ -80,6 +82,16 @@ export function resolveOwner(flag?: string): string {
 
 /** The resource key for a Vortex checkout, the same however the path is spelled. */
 export function checkoutResource(dir: string): string {
+  return `checkout:${normalizedPath(dir)}`;
+}
+
+/** `instance` or `instance:<cache dir>`: a lease on a running Vortex rather than a checkout. */
+export function isInstanceResource(resource: string): boolean {
+  return resource === INSTANCE_RESOURCE || resource.startsWith(`${INSTANCE_RESOURCE}:`);
+}
+
+/** A path spelled the same however it was given: resolved, real, forward slashes. */
+export function normalizedPath(dir: string): string {
   let resolved = path.resolve(dir);
   try {
     resolved = fs.realpathSync.native(resolved);
@@ -87,7 +99,7 @@ export function checkoutResource(dir: string): string {
     // A path that does not exist yet still gets a stable key.
   }
   resolved = resolved.replace(/\\/g, "/").replace(/\/+$/, "");
-  return `checkout:${process.platform === "win32" ? resolved.toLowerCase() : resolved}`;
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
 }
 
 function fileFor(dir: string, resource: string): string {
@@ -160,6 +172,8 @@ function readFile(file: string): Lease | undefined {
   }
   try {
     const lease = parseJson<Lease>(raw);
+    // Other state lives in the lease directory too (slots.json): only a lease has these.
+    if (typeof lease.resource !== "string" || typeof lease.owner !== "string") return undefined;
     lease.holders ??= [];
     lease.instancePids ??= [];
     return lease;
@@ -192,7 +206,7 @@ function sleepSync(ms: number): void {
 }
 
 /** Run `fn` holding the lease directory's mutex, so read-modify-write is atomic. */
-function withMutex<T>(dir: string, fn: () => T): T {
+export function withLeaseMutex<T>(dir: string, fn: () => T): T {
   fs.mkdirSync(dir, { recursive: true });
   const lock = path.join(dir, ".mutex");
   const deadline = Date.now() + 10_000;
@@ -234,10 +248,13 @@ export class LeaseHeldError extends ConfigError {
 
 function describeHeld(state: LeaseState, requestedBy: string): string {
   const { lease } = state;
+  const instance = isInstanceResource(lease.resource);
   const what =
     lease.resource === INSTANCE_RESOURCE
       ? "The Vortex instance lease"
-      : `The lease on ${lease.resource.slice("checkout:".length)}`;
+      : instance
+        ? `The Vortex instance lease for ${lease.resource.slice(INSTANCE_RESOURCE.length + 1)}`
+        : `The lease on ${lease.resource.slice("checkout:".length)}`;
   const purpose = lease.purpose === undefined ? "" : ` for "${lease.purpose}"`;
   return (
     `${what} is held by "${lease.owner}"${purpose} since ${lease.acquiredAt} ` +
@@ -245,9 +262,13 @@ function describeHeld(state: LeaseState, requestedBy: string): string {
     `  See who holds it:   pnpm run ai -- lease status\n` +
     `  Wait for it:        pnpm run ai -- lease run --owner ${requestedBy} --wait 60 -- <command>\n` +
     `  Holder releases:    pnpm run ai -- lease release --owner ${lease.owner}` +
-    (lease.resource === INSTANCE_RESOURCE ? `   (or down --owner ${lease.owner})` : "") +
+    (instance ? `   (or down --owner ${lease.owner})` : "") +
     `\n\n` +
-    `Use the same --owner (or VORTEX_AI_OWNER) for every command in one session.`
+    `Use the same --owner (or VORTEX_AI_OWNER) for every command in one session.` +
+    (instance
+      ? `\nFor a Vortex of your own alongside it, add --slot auto (harness/AGENTS.md, ` +
+        `"Parallel sessions").`
+      : "")
   );
 }
 
@@ -279,7 +300,7 @@ export function acquireLease(
   const mode = options.mode ?? "implicit";
   const pid = options.pid ?? (mode === "implicit" ? process.pid : undefined);
   const file = fileFor(env.dir, resource);
-  return withMutex(env.dir, () => {
+  return withLeaseMutex(env.dir, () => {
     const nowIso = new Date(env.now()).toISOString();
     const expiresAt =
       mode === "explicit" && options.ttlMinutes !== undefined && options.ttlMinutes > 0
@@ -364,7 +385,7 @@ function updateLease(
   const resolved = resolveEnv(env);
   const file = fileFor(resolved.dir, resource);
   if (!fs.existsSync(file)) return undefined;
-  return withMutex(resolved.dir, () => {
+  return withLeaseMutex(resolved.dir, () => {
     const lease = readFile(file);
     if (lease === undefined) return undefined;
     const next = update(lease);
@@ -436,7 +457,7 @@ export function releaseLease(
   const resolved = resolveEnv(options);
   const file = fileFor(resolved.dir, resource);
   if (!fs.existsSync(file)) return { released: false, reason: "not held", stillRunning: [] };
-  return withMutex(resolved.dir, () => {
+  return withLeaseMutex(resolved.dir, () => {
     const lease = readFile(file);
     if (lease === undefined) {
       fs.rmSync(file, { force: true });
@@ -451,7 +472,7 @@ export function releaseLease(
       };
     }
     const running = lease.instancePids.filter(resolved.isAlive);
-    if (options.force !== true && running.length > 0 && lease.resource !== INSTANCE_RESOURCE) {
+    if (options.force !== true && running.length > 0 && !isInstanceResource(lease.resource)) {
       // A checkout Vortex is running from stays locked until that Vortex exits: releasing
       // an explicit hold must not let someone rebuild or switch it underneath.
       writeFile(file, {
@@ -508,7 +529,7 @@ export function releaseOwnerLeases(
   return listLeases(options)
     .filter(({ lease }) => lease.owner === owner)
     .map(({ lease }) => lease.resource)
-    .toSorted((a, b) => Number(a === INSTANCE_RESOURCE) - Number(b === INSTANCE_RESOURCE))
+    .toSorted((a, b) => Number(isInstanceResource(a)) - Number(isInstanceResource(b)))
     .map((resource) => ({ resource, ...releaseLease(resource, owner, options) }));
 }
 

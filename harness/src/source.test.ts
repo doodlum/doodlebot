@@ -3,7 +3,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { ForkError, parsePnpmVersion, selectPnpmCommand, runStreaming } from "./source";
+import {
+  ForkError,
+  missingBuildOutputs,
+  needsShell,
+  parsePnpmVersion,
+  runStreaming,
+  selectPnpmCommand,
+} from "./source";
 
 it("preserves source paths containing spaces when invoking git", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vortex source "));
@@ -37,12 +44,51 @@ describe("Vortex source package manager", () => {
     });
   });
 
+  it("uses VORTEX_AI_PNPM instead of pnpm dlx when PATH has another pnpm", () => {
+    expect(selectPnpmCommand("11.10.0", "9.15.0", "J:/tools/node22/pnpm.cmd")).toEqual({
+      cmd: "J:/tools/node22/pnpm.cmd",
+      args: [],
+      version: "11.10.0",
+      exact: true,
+    });
+    // a matching pnpm on PATH still wins, and an empty override is no override
+    expect(selectPnpmCommand("11.10.0", "11.10.0", "C:/x/pnpm.cmd").cmd).toBe("pnpm");
+    expect(selectPnpmCommand("11.10.0", "9.15.0", " ").args).toEqual(["dlx", "pnpm@11.10.0"]);
+  });
+
+  it.runIf(process.platform === "win32")("runs pnpm and .cmd shims through a shell", () => {
+    expect(needsShell("pnpm")).toBe(true);
+    expect(needsShell("J:/tools/node22/pnpm.CMD")).toBe(true);
+    expect(needsShell("git")).toBe(false);
+  });
+
   it("bootstraps the checkout's exact version when PATH has another pnpm", () => {
-    expect(selectPnpmCommand("11.10.0", "9.15.0")).toEqual({
+    expect(selectPnpmCommand("11.10.0", "9.15.0", undefined)).toEqual({
       cmd: "pnpm",
       args: ["dlx", "pnpm@11.10.0"],
       version: "11.10.0",
       exact: false,
     });
   });
+});
+
+it("finds every worker main's build script bundles that a build left out", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vortex-build-"));
+  try {
+    const main = path.join(dir, "src", "main");
+    fs.mkdirSync(path.join(main, "build"), { recursive: true });
+    fs.writeFileSync(
+      path.join(main, "build.mjs"),
+      `await bundleWorker("./src/bsdiff/worker.ts", "bsdiff-worker.cjs");\n` +
+        `await bundleWorker('./src/hash/worker.ts', 'hash-worker.cjs');\n`,
+    );
+    for (const name of ["main.cjs", "renderer.js", "bsdiff-worker.cjs"])
+      fs.writeFileSync(path.join(main, "build", name), "");
+    // An nx cache hit restored everything @vortex/main declares, and it didn't declare this.
+    expect(missingBuildOutputs(dir)).toEqual(["hash-worker.cjs"]);
+    fs.writeFileSync(path.join(main, "build", "hash-worker.cjs"), "");
+    expect(missingBuildOutputs(dir)).toEqual([]);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

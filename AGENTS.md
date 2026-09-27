@@ -111,10 +111,12 @@ Use [harness/WORKFLOWS.md](harness/WORKFLOWS.md) for bug reproduction, regressio
 tests, new features, implementation from design documentation, and checks across
 window widths, heights, and application states.
 
-- **Several issues or PRs: orchestrate.** Give one fresh subagent each issue, one after
-  another in a single Vortex checkout. Reviews come from a separate agent. The orchestrating
-  session owns this kit and runs every gate that needs Vortex, since only one instance can run at
-  a time. See "Several issues at once" in `harness/WORKFLOWS.md`.
+- **Several issues or PRs: orchestrate.** Give one fresh subagent each issue, each in its
+  own Vortex worktree and instance slot (`worktree add <name>`, `--worktree <name> --slot auto`),
+  so they can run Vortex in parallel. Reviews come from a separate agent. The orchestrating
+  session is the only one that edits this kit: subagents end their reports with "Kit lessons"
+  and the orchestrator folds them into the kit, KNOWLEDGE.md and the skills. See "Several issues
+  at once" in `harness/WORKFLOWS.md`.
 - **The extension must keep working against a stock, released Vortex.** That
   constraint is the reason this design is worth anything. Anything needing the
   main process goes in the harness over CDP, never into a patch to Vortex.

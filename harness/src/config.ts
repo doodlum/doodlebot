@@ -9,9 +9,12 @@ import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 
-const HARNESS_ROOT = path.resolve(import.meta.dirname, "..");
-/** The vortex-mcp checkout — this repo. */
-export const REPO_ROOT = path.resolve(HARNESS_ROOT, "..");
+import { ConfigError } from "./errors";
+import { resolveOwner } from "./lease";
+import { HARNESS_ROOT, REPO_ROOT } from "./paths";
+import { assignSlot, parseSlot, type SlotRequest, slotPaths } from "./slots";
+
+export { ConfigError, REPO_ROOT };
 
 // Loaded from harness/.env when present, so an operator can keep the API key out
 // of their shell profile. Gitignored.
@@ -96,10 +99,21 @@ export interface HarnessConfig {
    */
   owner?: string;
   /**
+   * The instance slot (slots.ts) this configuration's defaults came from: 0 unless `--slot`
+   * or VORTEX_AI_SLOT asked for another. An explicit cache or port overrides its part.
+   */
+  slot: number;
+  /**
    * True when an API key is configured but deliberately not used: sandbox runs are
    * local-only, and a seeded key makes every local install wait on Nexus lookups.
    */
   apiKeyWithheld?: boolean;
+}
+
+/** An environment variable, with an empty one counted as unset. */
+function envValue(name: string): string | undefined {
+  const value = process.env[name];
+  return value === undefined || value === "" ? undefined : value;
 }
 
 function envFlag(name: string): boolean {
@@ -119,8 +133,6 @@ function envFlag(name: string): boolean {
 function defaultToken(): string {
   return `vortex-ai-${os.hostname().replace(/[^a-zA-Z0-9]/g, "")}`;
 }
-
-export class ConfigError extends Error {}
 
 /** Where a released Vortex puts itself, most likely first. */
 function installedVortexCandidates(): string[] {
@@ -219,21 +231,29 @@ export function resolveTargetSafely(
   }
 }
 
-export function loadConfig(overrides: Partial<HarnessConfig> = {}): HarnessConfig {
-  const config = {
+export type ConfigOverrides = Partial<Omit<HarnessConfig, "slot">> & { slot?: SlotRequest };
+
+export function loadConfig(overrides: ConfigOverrides = {}): HarnessConfig {
+  const { slot: slotOverride, ...rest } = overrides;
+  const owner = rest.owner ?? process.env.VORTEX_AI_OWNER;
+  const request = slotOverride ?? parseSlot(process.env.VORTEX_AI_SLOT);
+  const slot = request === "auto" ? assignSlot(resolveOwner(owner)) : (request ?? 0);
+  const defaults = slotPaths(slot);
+  const config: HarnessConfig = {
     apiKey: process.env.VORTEX_AI_NEXUS_API_KEY ?? process.env.NEXUS_API_KEY,
     mcpToken: process.env.VORTEX_MCP_TOKEN ?? defaultToken(),
-    mcpPort: Number(process.env.VORTEX_MCP_PORT ?? 3701),
-    cdpPort: Number(process.env.VORTEX_AI_CDP_PORT ?? 9222),
+    mcpPort: Number(envValue("VORTEX_MCP_PORT") ?? defaults.mcpPort),
+    cdpPort: Number(envValue("VORTEX_AI_CDP_PORT") ?? defaults.cdpPort),
     gameId: process.env.VORTEX_AI_GAME_ID ?? "fallout4",
     gamePath: process.env.VORTEX_AI_GAME_PATH,
-    cacheDir: process.env.VORTEX_AI_CACHE_DIR ?? path.join(HARNESS_ROOT, ".cache"),
-    artifactDir: process.env.VORTEX_AI_ARTIFACT_DIR ?? path.join(HARNESS_ROOT, ".artifacts"),
+    cacheDir: envValue("VORTEX_AI_CACHE_DIR") ?? defaults.cacheDir,
+    artifactDir: envValue("VORTEX_AI_ARTIFACT_DIR") ?? defaults.artifactDir,
     target: resolveTargetSafely(),
     headless: envFlag("VORTEX_AI_HEADLESS"),
     production: envFlag("VORTEX_AI_PRODUCTION"),
-    owner: process.env.VORTEX_AI_OWNER,
-    ...overrides,
+    owner,
+    ...rest,
+    slot,
   };
   for (const port of [config.mcpPort, config.cdpPort]) {
     if (!Number.isInteger(port) || port < 1 || port > 65535)

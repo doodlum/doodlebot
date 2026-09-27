@@ -106,41 +106,68 @@ one context degrades it. Findings, logs and diffs from one issue leak into reaso
 and review points get lost. Split the work:
 
 - **The orchestrator** (the session the user is talking to) triages the report into one task per
-  issue, keeps the list of open PRs and their state, and owns this kit. It is the only agent that
-  edits `vortex-mcp`. It schedules every use of Vortex: A/B timing, `pnpm run verify`, E2E.
-- **One fresh subagent per issue or PR** does the Vortex-side work: reproduce in unit tests, fix,
-  typecheck, lint, commit, push. Give it a self-contained brief: branch, worktree, the problem
-  statement, and any review findings as a file path, not pasted history. It must not start
-  Vortex, touch the kit, or edit the PR description. It reports kit or doc gaps back instead of
-  working around them.
-- **A separate fresh agent does QA and adversarial review on each pushed PR.** It reproduces the
-  problem on the base by itself, confirms the fix in the app, tries to break it, then reviews the
-  diff (see PULL-REQUESTS.md). It is the only other agent that drives Vortex, and only while it
-  holds the instance lease. The orchestrator sends confirmed findings back to a new fix agent,
-  and the cycle repeats until QA and review find nothing blocking.
+  issue, keeps the list of open PRs and their state, and owns this kit. **It is the only agent that
+  edits `vortex-mcp`**: the harness, the extension, KNOWLEDGE.md, the skills and these docs. It gives
+  each agent its owner name, worktree and slot, and runs the gates that need a quiet machine (A/B
+  timing, the final E2E baseline).
+- **One fresh subagent per issue or PR** does the Vortex-side work in its own worktree and its own
+  slot: reproduce, fix, test in the app, typecheck, lint, commit, push. Give it a self-contained
+  brief (PULL-REQUESTS.md, "Fix agent brief"): owner name, worktree, slot, branch, the problem
+  statement, and any review findings as a file path, not pasted history. It must not edit the kit
+  or the PR description.
+- **A separate fresh agent does QA and adversarial review on each pushed PR**, in a slot of its own.
+  It reproduces the problem on the base by itself, confirms the fix in the app, tries to break it,
+  then reviews the diff (see PULL-REQUESTS.md). The orchestrator sends confirmed findings back to a
+  new fix agent, and the cycle repeats until QA and review find nothing blocking.
 
-This separates using the kit to develop Vortex from improving the kit itself. The orchestrator
-turns the gaps agents report into kit changes, so the next agent inherits them.
+This separates using the kit to develop Vortex from improving the kit itself.
 
-**Serialize anything that touches Vortex, and hold the lease.** Only one Vortex instance can run at a time: the
-harness, E2E and `verify` share profiles, ports and `src/main/build`. The kit enforces it with a
-machine-wide instance lease (harness/AGENTS.md, "The instance lease"). Give every agent its own
-owner name and have it pass `--owner <name>` (or set `VORTEX_AI_OWNER`) on every command:
+### Kit lessons come back to the orchestrator
 
-- `up`, `down`, `setup`, `vortex-e2e`, `ai:test` and the `ai:test:*` scripts take the lease
-  themselves and refuse, naming the holder, while another owner has it.
-- Wrap anything else that uses Vortex in it:
-  `pnpm run ai -- lease run --owner <name> --wait 60 -- pnpm run verify`.
-- For a longer session (QA across several commands), take it up front with
-  `lease acquire --owner <name> --purpose "<why>" --ttl 120`, renew by acquiring again, and
-  `lease release --owner <name>` at the end. `lease status` shows who has it.
+Parallel agents editing KNOWLEDGE.md or a skill would overwrite each other, and a lesson written
+mid-task is often half-understood. So agents don't write them. Every subagent's final report ends
+with a **Kit lessons** section: each non-obvious behaviour it lost time to, each missing capability
+it worked around, each doc that was wrong, with the evidence. When there are none, it says so. The
+orchestrator reads them as reports come in, checks each one, and turns it into a kit change, test
+and doc entry (AGENTS.md, "Every automation request improves the automation kit"). The next agent
+it briefs inherits them. A subagent that is blocked on a missing capability stops and reports it
+rather than improvising a private workaround.
 
-A refused command changed nothing; wait (`--wait`) rather than releasing another owner's lease.
-Keep a single development
-checkout and run fix agents in it one after another, not in parallel worktrees. Extra worktrees
-multiply native-module installs, can hit Windows path-length limits, and make it easy to drive or
-verify the wrong tree. Parallelize only work that never builds or launches Vortex: code reading,
-reviews, and Linear or GitHub triage.
+### Running agents in parallel: a worktree and a slot each
+
+Several agents can drive Vortex at once, each on its own project, as long as none shares a checkout,
+a cache or a port with another (harness/AGENTS.md, "Parallel sessions"):
+
+```powershell
+# the orchestrator, once per agent
+pnpm run ai -- worktree add fix-24290 --base upstream/master
+# in the agent's brief: its owner, worktree and slot, on every command
+pnpm run ai -- up --owner fix-24290 --worktree fix-24290 --slot auto --bethesda-sandbox
+pnpm run ai -- screenshot --owner fix-24290 --slot auto --label repro
+pnpm run ai -- down --owner fix-24290 --slot auto
+```
+
+- **A worktree per agent** (`.vortex-worktrees/<name>`): its own branch, `node_modules` and build.
+  A Vortex running from it locks it (`checkout:<dir>`), so nobody rebuilds it underneath. Nobody
+  works in `.vortex-src` itself; it is the clone the worktrees come from, and may hold someone's
+  uncommitted work.
+- **A slot per agent** (`--slot auto` with its owner name, or `VORTEX_AI_SLOT=auto` and
+  `VORTEX_AI_OWNER` in its environment): its own cache, artifacts, MCP and CDP ports and instance
+  lease. The owner keeps the same slot, with its warm profile, across commands. `vortex-ai slots`
+  shows who has which.
+- `pnpm run verify`, `vortex-e2e` and `ai:test` run in the agent's own worktree and slot. Two
+  `vortex-e2e` runs never overlap: they share a lease of their own, so one waits for the other.
+- **Timing is not parallel.** Other instances compete for CPU, so an A/B measurement taken while
+  other agents build or drive Vortex is noise. The orchestrator runs timing gates with the machine
+  otherwise idle, and says so in the PR.
+- Each worktree installs its own dependencies (a few minutes and a few GB), and Windows path
+  limits still apply, so keep worktree names short. Remove a finished one with
+  `worktree remove <name>`; its branch stays.
+
+Leases still guard what is shared. `up`, `down`, `setup`, `ai:test` and the `ai:test:*` scripts
+take their slot's instance lease and refuse, naming the holder, while another owner has it. Wrap
+anything else that uses Vortex in `lease run --owner <name> --slot <n> -- <command>`. A refused
+command changed nothing; wait (`--wait`) rather than releasing another owner's lease.
 
 ## Implementing a feature from a design
 

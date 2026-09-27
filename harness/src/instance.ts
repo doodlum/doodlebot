@@ -22,6 +22,7 @@ import { createHash } from "node:crypto";
 import { extensionRoot, MCP_EXTENSION_ID, type HarnessConfig } from "./config";
 import { VortexMcpClient } from "./mcpClient";
 import { installSandboxExtension } from "./sandbox";
+import { instanceResource } from "./slots";
 import { preparePreload, verifyPreload } from "./mainPreload";
 import {
   INSTANCE_RESOURCE,
@@ -84,15 +85,14 @@ export function claimInstanceLease(
 }
 
 /**
- * The leases a running Vortex needs: the instance, and for a source build the checkout it
+ * The leases a running Vortex needs: this cache's instance, and for a source build the checkout it
  * runs from, so nobody rebuilds or switches that checkout underneath it (and a holder of
  * the checkout lock who starts Vortex also takes the instance).
  */
 export function instanceLeaseResources(config: HarnessConfig): string[] {
   const checkout = config.target.kind === "dev" ? config.target.sourceDir : undefined;
-  return checkout === undefined
-    ? [INSTANCE_RESOURCE]
-    : [INSTANCE_RESOURCE, checkoutResource(checkout)];
+  const instance = instanceResource(config.cacheDir);
+  return checkout === undefined ? [instance] : [instance, checkoutResource(checkout)];
 }
 
 /**
@@ -102,9 +102,10 @@ export function instanceLeaseResources(config: HarnessConfig): string[] {
  */
 export function attachedLeaseResources(config: HarnessConfig): string[] {
   const running = runningInstance(config);
+  const instance = instanceResource(config.cacheDir);
   return running?.sourceDir === undefined
-    ? [INSTANCE_RESOURCE]
-    : [INSTANCE_RESOURCE, checkoutResource(running.sourceDir)];
+    ? [instance]
+    : [instance, checkoutResource(running.sourceDir)];
 }
 
 interface InstanceRecord {

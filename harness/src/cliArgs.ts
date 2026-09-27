@@ -35,6 +35,7 @@ export const BOOLEAN_FLAGS = new Set([
   "build",
   "update",
   "no-build",
+  "no-install",
   "where",
   "purge",
   "keep",

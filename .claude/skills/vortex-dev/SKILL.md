@@ -127,9 +127,12 @@ Report each result in the PR.
 ## More than one issue
 
 Don't fix a batch of reported issues in one context. Triage them. Then hand each issue to a fresh
-subagent, one at a time in the one checkout, and have each PR reviewed by another fresh agent.
-Keep the kit changes and the app-driven gates in the orchestrating session. See "Several issues at
-once" in `harness/WORKFLOWS.md`.
+subagent with its own worktree and slot (`worktree add <name>`, then `--owner <name> --worktree
+<name> --slot auto` on every command), so they can run in parallel, and have each PR reviewed by
+another fresh agent in a slot of its own. Only the orchestrating session edits this kit: subagents
+end their reports with **Kit lessons**, and the orchestrator turns those into kit changes, tests and
+docs. Timing gates run with the machine otherwise idle. See "Several issues at once" in
+`harness/WORKFLOWS.md`.
 
 ## Git
 

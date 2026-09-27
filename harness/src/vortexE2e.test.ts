@@ -6,6 +6,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { INSTANCE_RESOURCE, checkoutResource, readLease, type LeaseEnv } from "./lease";
+import { VORTEX_E2E_RESOURCE } from "./vortexE2e";
 import {
   accountsForTest,
   callEnd,
@@ -463,7 +464,7 @@ describe("runVortexE2e", { timeout: 30_000 }, () => {
     // Restored byte-identically, tree clean, leases gone.
     expect(fs.readFileSync(path.join(checkout, FIXTURE), "utf8")).toBe(FIXTURE_BEFORE);
     expect(run(checkout, ["status", "--porcelain"]).trim()).toBe("");
-    expect(readLease(INSTANCE_RESOURCE, leaseEnv)).toBeUndefined();
+    expect(readLease(VORTEX_E2E_RESOURCE, leaseEnv)).toBeUndefined();
     expect(readLease(checkoutResource(checkout), leaseEnv)).toBeUndefined();
 
     expect(report.headSha).toBe(run(checkout, ["rev-parse", "HEAD"]).trim());
@@ -520,7 +521,7 @@ describe("runVortexE2e", { timeout: 30_000 }, () => {
     expect(fs.readFileSync(path.join(checkout, FIXTURE), "utf8")).toBe(
       `${FIXTURE_BEFORE}// mine\n`,
     );
-    expect(readLease(INSTANCE_RESOURCE, leaseEnv)).toBeUndefined();
+    expect(readLease(VORTEX_E2E_RESOURCE, leaseEnv)).toBeUndefined();
   });
 
   it("fails clearly when the patch no longer applies", async () => {
@@ -587,12 +588,32 @@ describe("runVortexE2e", { timeout: 30_000 }, () => {
     ).rejects.toThrow("playwright crashed");
     expect(fs.readFileSync(path.join(checkout, FIXTURE), "utf8")).toBe(FIXTURE_BEFORE);
     expect(run(checkout, ["status", "--porcelain"]).trim()).toBe("");
-    expect(readLease(INSTANCE_RESOURCE, leaseEnv)).toBeUndefined();
+    expect(readLease(VORTEX_E2E_RESOURCE, leaseEnv)).toBeUndefined();
   });
 
-  it("refuses while another owner holds the instance", async () => {
+  it("runs while another owner's harness Vortex holds an instance", async () => {
     const { acquireLease } = await import("./lease");
     acquireLease(INSTANCE_RESOURCE, "orchestrator", {
+      ...leaseEnv,
+      mode: "explicit",
+      ttlMinutes: 5,
+    });
+    await runVortexE2e({
+      checkout,
+      artifactDir,
+      owner: "qa",
+      patches: [patch],
+      runner: stubRunner({}),
+      leaseEnv,
+      handleSignals: false,
+    });
+    expect(readLease(INSTANCE_RESOURCE, leaseEnv)?.lease.owner).toBe("orchestrator");
+    expect(readLease(VORTEX_E2E_RESOURCE, leaseEnv)).toBeUndefined();
+  });
+
+  it("refuses while another owner's vortex-e2e run holds its lease", async () => {
+    const { acquireLease } = await import("./lease");
+    acquireLease(VORTEX_E2E_RESOURCE, "orchestrator", {
       ...leaseEnv,
       mode: "explicit",
       ttlMinutes: 5,
@@ -611,7 +632,7 @@ describe("runVortexE2e", { timeout: 30_000 }, () => {
     expect(fs.readFileSync(path.join(checkout, FIXTURE), "utf8")).toBe(FIXTURE_BEFORE);
   });
 
-  it("refuses while another owner holds the checkout, and releases the instance", async () => {
+  it("refuses while another owner holds the checkout, and releases its own lease", async () => {
     const { acquireLease } = await import("./lease");
     acquireLease(checkoutResource(checkout), "fixer", {
       ...leaseEnv,
@@ -629,7 +650,7 @@ describe("runVortexE2e", { timeout: 30_000 }, () => {
         handleSignals: false,
       }),
     ).rejects.toThrow(/The lease on .* is held by "fixer"/);
-    expect(readLease(INSTANCE_RESOURCE, leaseEnv)).toBeUndefined();
+    expect(readLease(VORTEX_E2E_RESOURCE, leaseEnv)).toBeUndefined();
     expect(fs.readFileSync(path.join(checkout, FIXTURE), "utf8")).toBe(FIXTURE_BEFORE);
   });
 });

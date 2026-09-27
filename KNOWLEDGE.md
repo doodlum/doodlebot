@@ -491,6 +491,27 @@ The classic layout, whose pane scrolls itself, was never affected; use it as the
 in-build control. The fix roots the observer at the element that actually scrolls
 (`scrollContainerOf`). It lives on the Vortex branch `fix/sticky-table-virtualisation`.
 
+### A sticky-header table's scroll-to did nothing
+
+Same root as above: with `stickyHeader`, SuperTable's `.table-main-pane` doesn't scroll, the
+page around it does. `scrollToItem` still set the pane's `scrollTop` from the row's
+`offsetTop`, which moves nothing and throws nothing. So on 2.7 every `mods-scroll-to` (the
+Plugins page's Mod column link, health-check "show mod", a collection's mod link) opened the
+Mods page at the top, and Page Up/Down sized its jump from the pane's full height. It looks like
+the 200 ms `show-main-page` timeout losing a race, but it isn't one. The fix (Vortex branch
+`fix/plugins-mod-link-scroll`) scrolls `mScrollContainer`, or `document.scrollingElement` when
+only the window scrolls, and measures the row against it with `getBoundingClientRect`.
+`pnpm run ai:test:plugins-mod-link` reproduces it on the fake Fallout 4. The Plugins table hides
+its Mod column by default, so that check turns the column on (`setAttributeVisible`).
+
+Two things that make that check pass on a broken build. First, the classic layout
+(`setUseModernLayout(false)`) has no sticky header, so master scrolls correctly there. The
+layout setting survives `up`'s reset start, so check `settings.window.useModernLayout` (the
+check reports it as `layout`). Second, the 200 ms wait in `PluginList.highlightMod` looks like
+a race but never lost in tests. The modern layout opens Mods at startup, so that page is always
+mounted. The classic one starts on Dashboard, and a cold click still scrolled with 3,000 mods in
+a production build.
+
 Traps found while measuring:
 
 - A deploy timing is worthless unless the purge before it removed the fixture's files.
@@ -796,6 +817,25 @@ the one their own configuration would pick. Releasing an explicit checkout lease
 Vortex still runs from it leaves the lease held by that Vortex; before, the release deleted
 the file outright and the checkout was free again.
 
+### A second instance was refused even with its own cache and ports
+
+Before slots, the instance lease was one machine-wide key, `instance`, whatever `--cache-dir` and
+ports a command used. So the documented "another independent instance" flags still refused a
+second owner. Two Vortex processes do coexist when their `userData` and ports differ: tested with
+a source build, two sandboxes up at once, each answering its own MCP port with its own profile.
+The lease is now per cache (`instance:<cache dir>`, bare `instance` for the default cache, so older
+leases still count), and slots (`--slot auto`) hand each owner a cache and ports.
+
+What still is shared, and why the orchestrator keeps it:
+
+- **One Vortex checkout per running Vortex.** Two slots launched from the same checkout conflict
+  on its lock (and on its `src/main/build`), so give each agent a worktree.
+- **The kit's own files.** Two agents appending to KNOWLEDGE.md or a skill overwrite each other,
+  so subagents report "Kit lessons" and only the orchestrator edits the kit.
+- **OAuth.** A new slot copies slot 0's saved login once. After that the copies diverge; if Nexus
+  rotates refresh tokens, a slot whose copy went stale needs `login-import --slot <n> --force`.
+- **CPU.** Timings taken while another slot builds or runs Vortex measure the other agent.
+
 ## Tooling on Windows
 
 ### `git commit -F -` fails with a PowerShell here-string
@@ -848,6 +888,44 @@ Python, and lint the result after any bulk edit.
 `Remove-Item Env:NODE_ENV` is blocked there. `$env:NODE_ENV=$null` removes the variable. Better
 not to set it in the shell at all: `vortex-ai build --production` sets it for the build only.
 
+### No `pnpm`, or only Node 20, on the agent's PATH
+
+A fresh agent shell can have Node 20 and no `pnpm` at all. `corepack pnpm` then fails signature
+verification, and pnpm 11 (Vortex's `packageManager`) needs Node ≥ 22.13 (`node:sqlite`). The
+kit's pinned pnpm runs as `npx -y pnpm@9.15.0 run ai -- …`. For Vortex, put a portable Node 22
+on a roomy drive with `npm install node@22 --prefix J:\tools\node22`, install
+`pnpm@11.10.0` globally into the same prefix, and prepend
+`J:\tools\node22\node_modules\node\bin;J:\tools\node22` to `PATH` for each command. When
+`vortex-ai build` falls back to `pnpm dlx pnpm@<version>` and that fails with ENOENT in
+`pnpm-cache\dlx` (seen with C: nearly full), run the checkout's own build with pnpm 11 and
+`$env:NODE_ENV='production'` in that one command. Then put back `etc/vortex.api.md` and
+`etc/Dependency Report.md` yourself, because only the kit's `build` does that.
+Or set `VORTEX_AI_PNPM` to that pnpm (`J:	ools
+ode22pnpm.cmd` here): `source`, `worktree add`
+and `build` then use it instead of `pnpm dlx`.
+
+### A cached Vortex build started, then failed at the first install
+
+`Cannot find module '…srcmainuildhash-worker.cjs'` from `start-install`. The worktree was
+built with `nx run @vortex/main:build`, and nx restored that target from its cache. A cache hit
+restores only the outputs the target declares. `src/main/project.json` lists `bsdiff-worker.cjs`
+but not `hash-worker.cjs`, which `src/main/build.mjs` also bundles (upstream master, September 2026).
+So the build looks complete, Vortex starts, and the first install fails. Any checkout whose main
+build was a cache hit has this. The kit now checks every `bundleWorker(…, "<name>")` in
+`build.mjs` after a build (`missingBuildOutputs`), runs `node build.mjs` when one is missing, and
+`up` refuses a checkout that lacks one. The real fix belongs in Vortex's `project.json` outputs.
+
+### `gh pr edit` fails on gh 2.31 with a Projects (classic) error
+
+The `gh` on PATH here (2.31.0) queries `projectCards`, which GitHub has removed, so
+`gh pr edit --body-file` fails with "Projects (classic) is being deprecated". `gh pr create`
+still works. Update a body through REST instead:
+`gh api -X PATCH repos/<owner>/<repo>/pulls/<n> -F "body=@<file>"`. For attachments use the kit's
+portable gh (`harness/.artifacts/gh-portable/bin/gh.exe`, 2.101): `gh pr edit --attach` uploads
+`.webm` recordings, which render as inline videos. It refuses `#alt text` on a video
+("cannot set alt text on video"), so pass the bare path. Run it from the files' directory so
+the body's `./file.webm` references are rewritten to the uploads.
+
 ### `oxfmt` with a PowerShell array fails
 
 `pnpm exec oxfmt $files`, where `$files` is a PowerShell array, fails with "Expected at least one
@@ -884,14 +962,12 @@ variable. The runner reads each describe's `test.use({ nexusUser })` and the tie
 ### Panel content uses stable portals
 
 Page content is mounted through stable React portals so panel navigation and layout
-changes retain page state. React capture events follow the portal's React ancestry,
-not its DOM ancestry: a handler on the surrounding panel frame misses these clicks.
-Use native DOM capture listeners on the frame for pointerdown and focusin. They
-also handle controls that stop bubbling without cancelling the control's action or
-stealing keyboard focus. Check actual page content, input focus, and the sidebar
-indicator; clicking only panel chrome does not cover this path.
+changes retain page state. The current split view does not track panel focus;
+sidebar navigation loads a separate saved workspace for each page. Do not add
+native pointer or focus listeners to the panel frame to make content clicks
+change the selected sidebar page.
 
-Previously hidden panel tabs could make legacy SuperTable measure zero-width proxy columns. Its
+Previously hidden panel pages could make legacy SuperTable measure zero-width proxy columns. Its
 200ms header debounce then flashed collapsed columns when the page returned. Keep
 the last valid measurements while the proxy row has no width, and observe its size
 to synchronize the visible header before paint.
@@ -900,6 +976,27 @@ For hover-only controls (the earlier panel trial used these), wait for the conta
 taking a scoped MCP snapshot. The button's own computed opacity can be `1` while its parent is
 still invisible. Sidebar width transitions likewise need a geometry assertion that waits for
 the final width before checking collapsed icon centering.
+
+The right-hand split view uses the sidebar's `transition-[width]` timing.
+React can batch a split's collapsed layout effect and expanded state into the
+same paint: `getComputedStyle(...).transitionDuration` then reports 150ms while
+the pane still jumps straight to full width. Keep the collapsed state through
+one painted animation frame, then set the target width in the next frame. The
+live regression samples successive pane widths and requires an intermediate
+value; a duration-only check misses this failure.
+
+The 20–80% divider ratio alone cannot guarantee the two-pane minimum. At a
+1536px window, 80/20 left a 243px Plugins pane and clipped its toolbar even
+though the total content width could fit two 440px panes. Clamp drag and keyboard
+ratios against the measured workspace width, and refit a saved ratio when the
+window narrows; retain the edge gesture for intentionally closing a pane.
+
+Even a 440px pane can be narrower than an extension's sticky toolbar: the
+gamebryo Plugins header was 494px wide and hid its trailing counters. A generic
+overflow rule on legacy `.mainpage-header` inside split panes lets users scroll
+to those actions without changing each extension page. Test this by scrolling
+the header to its end in a real Vortex; an unclipped table below does not prove
+the toolbar is reachable.
 
 Panel pop-outs were removed by design choice. Lessons from that experiment: child
 documents need CSSOM rules, SVG symbols, a base URL and a doctype; bare about:blank
