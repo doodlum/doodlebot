@@ -11,7 +11,7 @@ self-built Vortex.
 | `src/`                     | The Vortex extension: an MCP server exposing Vortex's state **and** its UI |
 | `harness/`                 | The `doodlebot` CLI and Playwright suite: launch, cache, drive, verify     |
 | `harness/AGENTS.md`        | **The operating manual.** Start here to use any of this                    |
-| `harness/WORKFLOWS.md`     | Bug fixes, features, designs, state matrices, orchestrating several agents |
+| `harness/WORKFLOWS.md`     | Bug fixes, features, designs, state matrices, several agents at once       |
 | `harness/PULL-REQUESTS.md` | Vortex PR titles, description template, agent briefs, review lessons       |
 | `KNOWLEDGE.md`             | Vortex behaviours that fail silently. Read before debugging                |
 | `ARCHITECTURE.md`          | Why the extension reflects Vortex's API instead of wrapping it             |
@@ -66,12 +66,12 @@ A task is complete only when its result is verified, or a concrete external bloc
 
 ## Working on this repo
 
-- **One orchestrator, many doodlebots.** The session the user talks to orchestrates. It gives
-  each issue to a fresh subagent with its own worktree and instance slot (`worktree add <name>`,
-  then `--owner <name> --worktree <name> --slot auto`), so they run Vortex in parallel. A
-  separate agent reviews each PR. **Only the orchestrator edits this kit.** Subagents end
-  their reports with **Kit lessons**, which the orchestrator turns into kit changes, tests and
-  docs. See `harness/WORKFLOWS.md`, "Several issues at once".
+- **Many doodlebots, no orchestrator.** Any number of sessions can work at once, each on its own
+  issue, in its own worktree and instance slot (`worktree add <name>`, then `--owner <name>
+--worktree <name> --slot auto`), each looking after its own review and PR. **Changes to this
+  kit (knowledge, skills, harness, docs) happen only under the kit lock:** `kit lock`, `kit sync`,
+  edit, `pnpm run ci`, commit, `kit push`, `kit unlock`. See `harness/WORKFLOWS.md`, "Several
+  agents at once".
 - **The extension must keep working against a stock, released Vortex.** Anything that needs the
   main process goes in the harness over CDP, never into a patch to Vortex.
 - **Two test layers.** Pure DOM logic goes in `src/uiAutomation.test.ts` under jsdom; anything
@@ -83,5 +83,6 @@ A task is complete only when its result is verified, or a concrete external bloc
 
 ## Committing
 
-Conventional Commits. Don't commit, push or open a PR unless asked. Every Vortex PR description
+Conventional Commits. Don't commit, push or open a PR unless asked, except for kit lessons you apply
+under the kit lock (`kit push`). Every Vortex PR description
 ends with the doodlebot footer (`harness/PULL-REQUESTS.md`).

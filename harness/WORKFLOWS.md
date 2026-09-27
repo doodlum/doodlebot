@@ -72,7 +72,7 @@ the Mods page stays mounted while hidden (KNOWLEDGE.md).
 
 ## Before a Vortex pull request is ready
 
-**The orchestrator opens even a draft PR only when it is ready to be looked at**: the author's
+**Open even a draft PR only when it is ready to be looked at**: the author's
 evidence is complete, `pnpm run verify` passed on the head, the adversarial QA has given its
 verdict and its findings are addressed, and anything visible has before/after clips. A pushed
 branch is not a PR. Until then, work and review happen on the branch. The user is told the branch
@@ -114,73 +114,46 @@ Titles, the description template, the reviewer brief and the lessons log are in
 [PULL-REQUESTS.md](PULL-REQUESTS.md). After every review, add any recurring class of finding to
 its "Review lessons", so the next author checks for it before pushing.
 
-## Several issues at once: orchestrate, don't accumulate
+## Several agents at once: each looks after itself
 
-A report often names several problems: a slow deploy, a crash, a missing warning. Working them all in
-one context degrades it. Findings, logs and diffs from one issue leak into reasoning about the next,
-and review points get lost. Split the work:
+Any number of doodlebot sessions can run at the same time, each working on its own issue. There is
+no orchestrator: each session triages, fixes, verifies, reviews and opens the PR for its own work,
+and keeps to its own worktree, slot and owner name. What they share is guarded by leases:
 
-- **The orchestrator** (the session the user is talking to) triages the report into one task per
-  issue, keeps the list of open PRs and their state, and owns this kit. **It is the only agent that
-  edits `doodlebot`**: the harness, the extension, KNOWLEDGE.md, the skills and these docs. It gives
-  each agent its owner name, worktree and slot, and runs the gates that need a quiet machine (A/B
-  timing, the final E2E baseline).
-- **One fresh subagent per issue or PR** does the Vortex-side work in its own worktree and its own
-  slot: reproduce, fix, test in the app, typecheck, lint, commit, push. Give it a self-contained
-  brief (PULL-REQUESTS.md, "Fix agent brief"): owner name, worktree, slot, branch, the problem
-  statement, and any review findings as a file path, not pasted history. It must not edit the kit
-  or the PR description.
-- **A separate fresh agent does QA and adversarial review on each pushed PR**, in a slot of its own.
-  It reproduces the problem on the base by itself, confirms the fix in the app, tries to break it,
-  then reviews the diff (see PULL-REQUESTS.md). The orchestrator sends confirmed findings back to a
-  new fix agent, and the cycle repeats until QA and review find nothing blocking.
+| Shared thing                                   | Guard                                              |
+| ---------------------------------------------- | -------------------------------------------------- |
+| A Vortex instance (cache, ports)               | its slot's instance lease (`--slot auto`)          |
+| A Vortex checkout                              | `checkout:<dir>`, held while a Vortex runs from it |
+| This repo: KNOWLEDGE.md, skills, harness, docs | **the kit lock** (`kit lock` … `kit push`, below)  |
+| Vortex's own E2E suite                         | the `vortex-e2e` lease                             |
 
-This separates using the kit to develop Vortex from improving the kit itself.
+One issue per context still holds. A report that names several problems gets one session (or one
+fresh subagent) per problem, because findings, logs and diffs from one issue leak into reasoning
+about the next. A session that spawns subagents for its own issue — a fix agent, a QA agent — briefs
+them with the templates in PULL-REQUESTS.md and gives each its own worktree and slot.
 
-### Kit lessons come back to the orchestrator
+### Changing the kit: take the kit lock
 
-Parallel agents editing KNOWLEDGE.md or a skill would overwrite each other, and a lesson written
-mid-task is often half-understood. So agents don't write them. Every subagent's final report ends
-with a **Kit lessons** section: each non-obvious behaviour it lost time to, each missing capability
-it worked around, each doc that was wrong, with the evidence. When there are none, it says so. The
-orchestrator reads them as reports come in, checks each one, and turns it into a kit change, test
-and doc entry (AGENTS.md, "Every automation request improves the kit"). The next agent
-it briefs inherits them. A subagent that is blocked on a missing capability stops and reports it
-rather than improvising a private workaround.
+Every session improves the kit as it goes (AGENTS.md, "Every automation request improves the kit"),
+but the kit is one working tree and one `main`, so only one session changes it at a time:
 
-### Review starts when the design is settled
+```powershell
+pnpm run ai -- kit lock --owner <you> --wait 30   # waits while another session holds it
+pnpm run ai -- kit sync --owner <you>             # switch to main, fast-forward to origin/main
+# edit KNOWLEDGE.md, a skill, the harness or the docs; pnpm run ci; git commit
+pnpm run ai -- kit push --owner <you>             # rebase onto origin/main, push main
+pnpm run ai -- kit unlock --owner <you>
+```
 
-While the user is still shaping a change (choosing between variants, asking for new ones),
-the work isn't ready for QA. Don't start or keep a reviewer on it: every new direction makes its
-findings stale, and its Vortex is one more window on the user's screen. The author iterates, the
-user tries the demo, and QA begins only when the user says the design is settled (or the change has
-no design questions). Pause a running reviewer as soon as the direction changes.
-
-### A reviewer runs only the head it reviews
-
-A reviewer that keeps a Vortex up on an older head, while the author works on a newer one, puts a
-window with an outdated design on the user's screen, and it looks like the author's work went
-wrong. Review the head you were given. When the author pushes a new one, `down`, move your
-worktree to it, and only then `up` again. Keep your instance down while you wait.
-
-### A build for the user to try gets its own worktree
-
-When the user wants to try a branch, don't run their Vortex from the author's worktree. It locks
-the checkout, so the author can't rebuild it, and `pr-preflight`'s revert check is refused.
-Make one for them: `worktree add demo-<topic> --ref origin/<branch>`, `up --owner user-demo
---worktree demo-<topic> --slot auto`. Leave it running until they're done. To show them a new
-head, `down`, `git -C <demo worktree> checkout --detach <sha>`, rebuild, and `up` again.
-
-### Revisiting closed PRs: the doodlebot queue
-
-An upstream PR the user closed with no draft on their fork hasn't been looked at by a doodlebot
-yet: queue it, one agent each. The agent reads the PR, its diff and its thread, **and the linked
-Linear issue's comments**, where maintainers often give the reason for closing and the GitHub
-thread stays empty. It checks whether the problem still exists on current upstream/master, then
-either redoes the fix on a fresh branch (cherry-picking the old one where it still applies, and
-addressing the feedback), or writes down why no draft is needed. Both outcomes close the queue
-entry. `gh pr view <n> --json title,body,comments,reviews,state,closedAt` is more reliable than
-`--comments`.
+- Take the lock **before the first edit**, not just to push: an edit in the shared working tree is
+  visible to every other session at once. Keep the window short: note lessons as you work, then
+  apply them together under one lock.
+- `kit push` refuses without the lock, with uncommitted changes, or off `main`. The lock lapses after
+  30 minutes unless taken again (`--ttl`), so a session that dies can't hold it for long.
+  `kit status` shows who has it.
+- Never leave kit edits uncommitted after releasing the lock, and never edit the kit from a
+  subagent without the lock. Subagents may still report **Kit lessons** to the session that briefed
+  them; that session applies them under the lock.
 
 ### Running agents in parallel: a worktree and a slot each
 
@@ -188,9 +161,7 @@ Several agents can drive Vortex at once, each on its own project, as long as non
 a cache or a port with another (harness/AGENTS.md, "Parallel sessions"):
 
 ```powershell
-# the orchestrator, once per agent
 pnpm run ai -- worktree add fix-24290 --base upstream/master
-# in the agent's brief: its owner, worktree and slot, on every command
 pnpm run ai -- up --owner fix-24290 --worktree fix-24290 --slot auto --bethesda-sandbox
 pnpm run ai -- screenshot --owner fix-24290 --slot auto --label repro
 pnpm run ai -- down --owner fix-24290 --slot auto
@@ -206,17 +177,50 @@ pnpm run ai -- down --owner fix-24290 --slot auto
   shows who has which.
 - `pnpm run verify`, `vortex-e2e` and `ai:test` run in the agent's own worktree and slot. Two
   `vortex-e2e` runs never overlap: they share a lease of their own, so one waits for the other.
-- **Timing is not parallel.** Other instances compete for CPU, so an A/B measurement taken while
-  other agents build or drive Vortex is noise. The orchestrator runs timing gates with the machine
-  otherwise idle, and says so in the PR.
+- **Timing needs a quiet machine.** Other instances compete for CPU, so a measurement taken while
+  other sessions build or drive Vortex is noise. Before timing, check `doodlebot slots` and wait
+  until no other instance is running; say in the PR what else was running, if anything.
+- **Keep your windows off the user's screen when you can.** Keep your instance down when idle, and
+  capture with as few setting or layout switches as possible (each can flash the window).
 - Each worktree installs its own dependencies (a few minutes and a few GB), and Windows path
   limits still apply, so keep worktree names short. Remove a finished one with
   `worktree remove <name>`; its branch stays.
 
-Leases still guard what is shared. `up`, `down`, `setup`, `ai:test` and the `ai:test:*` scripts
-take their slot's instance lease and refuse, naming the holder, while another owner has it. Wrap
-anything else that uses Vortex in `lease run --owner <name> --slot <n> -- <command>`. A refused
-command changed nothing; wait (`--wait`) rather than releasing another owner's lease.
+A refused command changed nothing; wait (`--wait`) rather than releasing another owner's lease.
+
+### Review starts when the design is settled
+
+While the user is still shaping a change (choosing between variants, asking for new ones), the work
+isn't ready for QA. Don't start or keep a reviewer on it: every new direction makes its findings
+stale, and its Vortex is one more window on the user's screen. Iterate, let the user try a demo, and
+start QA only when the user says the design is settled (or the change has no design questions).
+Pause a running reviewer as soon as the direction changes.
+
+### A reviewer runs only the head it reviews
+
+A reviewer that keeps a Vortex up on an older head, while the author works on a newer one, puts a
+window with an outdated design on the user's screen, and it looks like the author's work went wrong.
+Review the head you were given. When a new one is pushed, `down`, move your worktree to it
+(`worktree add <name> --ref origin/<branch>` makes a detached one), and only then `up` again.
+
+### A build for the user to try gets its own worktree
+
+When the user wants to try a branch, don't run their Vortex from the author's worktree. It locks the
+checkout, so the author can't rebuild it, and `pr-preflight`'s revert check is refused. Make one for
+them: `worktree add demo-<topic> --ref origin/<branch>`, `up --owner user-demo --worktree
+demo-<topic> --slot auto`. Leave it running until they're done. To show them a new head, `down`,
+`git -C <demo worktree> checkout --detach <sha>`, rebuild, and `up` again.
+
+### Revisiting closed PRs: the doodlebot queue
+
+An upstream PR the user closed with no draft on their fork hasn't been looked at by a doodlebot yet:
+queue it, one session each. Read the PR, its diff and its thread, **and the linked Linear issue's
+comments**, where maintainers often give the reason for closing and the GitHub thread stays empty.
+Check whether the problem still exists on current upstream/master, then either redo the fix on a
+fresh branch (cherry-picking the old one where it still applies, and addressing the feedback), or
+write down why no draft is needed. Both outcomes close the queue entry.
+`gh pr view <n> --json title,body,comments,reviews,state,closedAt` is more reliable than
+`--comments`.
 
 ## Implementing a feature from a design
 

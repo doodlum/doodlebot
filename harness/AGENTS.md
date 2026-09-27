@@ -105,8 +105,8 @@ pnpm run ai -- up --installed --sandbox --rebuild-snapshot
 
 ## Parallel sessions: a worktree and a slot per agent
 
-One orchestrator session alone edits the kit (WORKFLOWS.md, "Several issues at once"). Each
-doodlebot subagent works in its own worktree and slot, so their Vortex instances coexist.
+Each doodlebot session works in its own worktree and slot, so their Vortex instances coexist, and
+changes the kit only under the kit lock (WORKFLOWS.md, "Several agents at once").
 
 ```powershell
 pnpm run ai -- worktree add fix-a --base upstream/master   # .vortex-worktrees/fix-a, installed and built
@@ -134,8 +134,11 @@ pnpm run ai -- worktree remove fix-a                       # the branch stays
   makes a detached worktree at it (QA must not commit to the author's branch anyway).
   on any command means `--dev-dir` for it. `remove` refuses while a Vortex runs from it, or with
   uncommitted changes unless `--force`.
-- Shared by all: `dist/` (the orchestrator builds the extension once), the pnpm store, the CPU.
-  Don't take timings while other slots are busy.
+- Shared by all: `dist/` (rebuilt by whoever changes the extension, under the kit lock), the pnpm
+  store, the CPU. Don't take timings while other slots are busy (`slots`).
+- **The kit lock** (`kit lock --owner <you> [--wait <min>]`, `kit sync`, `kit push`, `kit unlock`,
+  `kit status`): one session at a time edits and pushes this repo. `kit push` rebases `main` onto
+  `origin/main` and pushes, refusing without the lock, with uncommitted changes or off `main`.
 - `vortex-e2e` has its own lease (`vortex-e2e`): E2E runs wait for each other, not for instances.
 - `pnpm run ai:test:parallel-sessions -- [--a <checkout>] [--b <checkout>]` checks two sessions side
   by side: own ports, profile and lease, isolated installs, clean stop.
@@ -199,24 +202,24 @@ The loop is snapshot, act, wait, inspect. Refs expire on the next snapshot, relo
 removal: never reuse one. Filter or scroll virtualized rows into the DOM first. Check
 `activeDialogs` when an action seems blocked. Independent clients must coordinate UI actions.
 
-| Tool/path                                                  | Use                                                                                                                                   |
-| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `ui_snapshot`                                              | Tree, accessible names, refs, active dialogs; selector/index scope                                                                    |
-| `ui_active_dialogs`                                        | Open dialogs only; cheap to poll                                                                                                      |
-| `ui_click`, `ui_fill`                                      | Mouse sequence, React-compatible input                                                                                                |
-| `ui_press_key`                                             | DOM key handlers; not native dialogs or text insertion                                                                                |
-| `ui_select_option`                                         | Native select; custom dropdowns need click-then-click                                                                                 |
-| `ui_scroll`                                                | Scroll plus events for virtualized lists; not a native wheel                                                                          |
-| `ui_wait_for`                                              | Poll selector/text; check `matched`, a timeout returns false                                                                          |
-| `ui_hover` / harness `realHover()`                         | JavaScript hover only / real CDP mouse including `:hover`                                                                             |
-| harness `realWheel(config, selector, deltaY, { control })` | Native wheel, optionally with Control                                                                                                 |
-| `ui_get_viewport`, `ui_set_viewport`                       | Read/resize window and renderer                                                                                                       |
-| `ui_detect_layout_issues`, `ui_responsive_sweep`           | Advisory layout findings                                                                                                              |
-| `ui_read_console`                                          | Renderer console/errors since a sequence number                                                                                       |
-| `nexus_auth_status`                                        | Credential-presence booleans                                                                                                          |
+| Tool/path                                                  | Use                                                                                                                                    |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `ui_snapshot`                                              | Tree, accessible names, refs, active dialogs; selector/index scope                                                                     |
+| `ui_active_dialogs`                                        | Open dialogs only; cheap to poll                                                                                                       |
+| `ui_click`, `ui_fill`                                      | Mouse sequence, React-compatible input                                                                                                 |
+| `ui_press_key`                                             | DOM key handlers; not native dialogs or text insertion                                                                                 |
+| `ui_select_option`                                         | Native select; custom dropdowns need click-then-click                                                                                  |
+| `ui_scroll`                                                | Scroll plus events for virtualized lists; not a native wheel                                                                           |
+| `ui_wait_for`                                              | Poll selector/text; check `matched`, a timeout returns false                                                                           |
+| `ui_hover` / harness `realHover()`                         | JavaScript hover only / real CDP mouse including `:hover`                                                                              |
+| harness `realWheel(config, selector, deltaY, { control })` | Native wheel, optionally with Control                                                                                                  |
+| `ui_get_viewport`, `ui_set_viewport`                       | Read/resize window and renderer                                                                                                        |
+| `ui_detect_layout_issues`, `ui_responsive_sweep`           | Advisory layout findings                                                                                                               |
+| `ui_read_console`                                          | Renderer console/errors since a sequence number                                                                                        |
+| `nexus_auth_status`                                        | Credential-presence booleans                                                                                                           |
 | `automation_status`                                        | Profile paths, renderer lifetime ID, NODE_ENV, `react.build`. The profile is `userDataDir`; Vortex's log is `<userDataDir>/vortex.log` |
-| `collection_install_state`                                 | Collection install driver, session and dialogs (below)                                                                                |
-| `vortex_query`, `vortex_dispatch`                          | Inspect state, invoke documented actions/events                                                                                       |
+| `collection_install_state`                                 | Collection install driver, session and dialogs (below)                                                                                 |
+| `vortex_query`, `vortex_dispatch`                          | Inspect state, invoke documented actions/events                                                                                        |
 
 Harness `clickByName`/`fillByName` match exact case-insensitive names (or explicit regexes) and
 reject ambiguity; use accessible names and scope modals to their dialog. `{ selector, index? }`

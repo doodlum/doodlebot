@@ -66,6 +66,7 @@ import {
   type ReleaseResult,
 } from "./lease";
 import { runUnderLease } from "./leaseCommand";
+import { kitLockHolder, lockKit, pushKit, syncKit, unlockKit } from "./kitLock";
 import { formatSlots, instanceResource, listSlots, parseSlot } from "./slots";
 import { addWorktree, listWorktrees, removeWorktree, worktreeDir } from "./worktree";
 import { importLogin } from "./loginImport";
@@ -210,6 +211,12 @@ Instance lifecycle
     --json               Print the report as JSON (Playwright's output goes to stderr)
 
 Parallel sessions (harness/AGENTS.md, "Parallel sessions")
+  kit lock               Take the global kit lock before changing doodlebot itself (knowledge,
+                         skills, harness, docs): --owner <name> [--ttl <min>, default 30]
+                         [--wait <min>]. Take it again to renew.
+  kit sync               Under the lock: switch to main and fast-forward to origin/main
+  kit push               Under the lock: rebase main onto origin/main and push it
+  kit unlock | status    Release the lock, or show who holds it
   --slot <n|auto>        Instance slot: its own cache, artifacts, ports and instance lease.
                          0 (default) is harness/.cache on 3701/9222; n uses harness/.slots/<n>
                          on 3701+10n/9222+10n. auto: this owner's own slot, kept across
@@ -351,6 +358,7 @@ async function main(): Promise<number> {
     return 0;
   }
   if (command === "worktree") return worktreeCommand(positional, flags);
+  if (command === "kit") return kitCommand(positional, flags);
 
   if (command === "build") {
     const checkout = typeof flags.checkout === "string" ? flags.checkout : vortexSourceDir();
@@ -898,6 +906,56 @@ async function main(): Promise<number> {
       log(`Unknown command "${command}".\n`);
       log(HELP);
       return 1;
+  }
+}
+
+async function kitCommand(positional: string[], flags: ParsedArgs["flags"]): Promise<number> {
+  const owner = resolveOwner(typeof flags.owner === "string" ? flags.owner : undefined);
+  const minutes = (name: string): number | undefined => {
+    if (typeof flags[name] !== "string") return undefined;
+    const value = Number(flags[name]);
+    if (!Number.isFinite(value) || value < 0) throw new ConfigError(`--${name} must be minutes.`);
+    return value;
+  };
+  switch (positional[0]) {
+    case "lock": {
+      const result = await waitForLease(
+        () => lockKit(owner, { ttlMinutes: minutes("ttl") }),
+        (minutes("wait") ?? 0) * 60_000,
+        (err) => log(`Waiting for the kit lock:\n${err.message}\n`),
+      );
+      log(
+        `${result.joined ? "Renewed" : "Took"} the kit lock for "${owner}" until ` +
+          `${result.lease.expiresAt ?? "released"}. Now: kit sync, edit, pnpm run ci, commit, ` +
+          "kit push, kit unlock.",
+      );
+      return 0;
+    }
+    case "unlock": {
+      const result = unlockKit(owner, { force: flags.force === true });
+      log(
+        result.released ? "Released the kit lock." : `Not released: ${result.reason ?? "unknown"}.`,
+      );
+      return result.released || result.reason === "not held" ? 0 : 1;
+    }
+    case "status":
+    case undefined: {
+      const holder = kitLockHolder();
+      log(holder === undefined ? "The kit lock is free." : `The kit lock is held by "${holder}".`);
+      return 0;
+    }
+    case "sync": {
+      const sha = await syncKit({ owner, onProgress: (m) => log(`  ${m}`) });
+      log(`The kit is at ${sha.slice(0, 9)}.`);
+      return 0;
+    }
+    case "push": {
+      const sha = await pushKit({ owner, onProgress: (m) => log(`  ${m}`) });
+      log(`Pushed the kit at ${sha.slice(0, 9)}. Release the lock: kit unlock --owner ${owner}`);
+      return 0;
+    }
+    default:
+      throw new ConfigError("kit takes lock, unlock, status, sync or push.");
   }
 }
 

@@ -1,7 +1,7 @@
 /**
  * Instance slots: several harness Vortex instances on one machine, one per agent session.
  *
- * An orchestrating session hands issues to subagents, each on its own Vortex worktree
+ * Several agent sessions work at once, each on its own Vortex worktree
  * (worktree.ts). Only one Vortex per cache and per port pair can run, so each session
  * also needs its own cache, ports and instance lease. A slot is that set, derived from
  * one number:

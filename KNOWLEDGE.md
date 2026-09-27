@@ -5,8 +5,8 @@ points somewhere else. Read it before debugging something baffling.
 
 Each entry is symptom, cause, what to do. Add one when something non-obvious cost real time, and
 keep it timeless: no benchmark figures, run history or upstream PR status. Remove an entry when
-the code makes it obsolete. In parallel work only the orchestrator edits this file, from the
-"Kit lessons" in its subagents' reports (harness/WORKFLOWS.md).
+the code makes it obsolete. Edit it only under the kit lock (`kit lock`, `kit push`;
+harness/WORKFLOWS.md, "Changing the kit").
 
 ## Extensions
 
@@ -126,7 +126,7 @@ code, `commandEnv` for a user's command.
   with "pnpm: command not found". Prepend the node22 PATH in the same command.
 - In some sandboxed agent shells a worktree's install fails at electron-rebuild (MSBuild C1083,
   "Cannot open compiler generated file"), and `pnpm exec vitest` re-runs that install, so even
-  unit tests can't run. Give such an agent a worktree the orchestrator built. For unit tests
+  unit tests can't run. Give such an agent a worktree built from an unsandboxed shell. For unit tests
   alone, a vitest config that aliases the native modules (`winapi-bindings`, `drivelist`,
   `leveldown`, `xxhash-addon`, `@nexusmods/fomod-installer-native`, `@parcel/watcher`) to a
   Proxy stub, run as `node node_modules/vitest/vitest.mjs run -c <config>`, gets the suites going.
@@ -570,8 +570,8 @@ The instance lease is per cache (`instance:<cache dir>`, bare `instance` for the
   and holds it until that Vortex exits, even if you release it. Checks driving a running instance
   take the checkout it was launched from (`<cache>/instance.json`), not their own flags'. Two slots
   from one checkout conflict, so give each agent a worktree (`worktree add <name>`).
-- **The kit's files.** Parallel edits overwrite each other, so subagents report "Kit lessons" and
-  only the orchestrator edits the kit.
+- **The kit's files.** Parallel edits overwrite each other, so the kit is changed only under the
+  kit lock (`kit lock` … `kit push`).
 - **OAuth copies diverge between slots.** A new slot copies slot 0's login once, then refreshes its
   own. If Nexus rotates refresh tokens, a stale slot needs `login-import --slot <n> --force`.
 - **CPU.** Timings taken while another slot builds or runs Vortex measure the other agent.

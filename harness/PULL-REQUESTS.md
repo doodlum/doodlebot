@@ -122,7 +122,7 @@ judgment". The loop is working when the numbers other than judgment reach zero.
 
 ### Fix agent brief
 
-The orchestrator sends each fix agent this brief, filled in:
+A session that hands its issue to a fix subagent sends this brief, filled in:
 
 ```text
 Fix <issue/PR url> as owner <name>, in the worktree <checkout> (doodlebot/.vortex-worktrees/<name>)
@@ -173,7 +173,7 @@ Do not commit, push, edit the PR, or edit doodlebot. Pass `--owner <qa-name> --w
 (re-run it to renew), run verify as `pnpm run ai -- lease run --owner <qa-name> --slot auto -- pnpm run verify`
 after `down`, and `pnpm run ai -- lease release --owner <qa-name>` when done. If a command says another
 owner holds a lease, wait (`--wait 60`); never release theirs. Don't take timings while other agents
-build or run Vortex: report them as unmeasured and let the orchestrator measure. End your report with
+build or run Vortex (`slots`): wait for a quiet machine, or report them as unmeasured. End your report with
 **Kit lessons**, as the fix brief says.
 
 Test it yourself:
@@ -213,24 +213,24 @@ Report:
   judgment. For each, give file:line, the concrete failure and how you confirmed it (reproduced
   in the app, ran a test, or traced the code). Say what you checked and found holding. Do not
   pad.
-- **Kit gaps:** anything the harness couldn't do that you needed. The orchestrator adds it to the
-  kit.
+- **Kit gaps:** anything the harness couldn't do that you needed. Whoever briefed you applies it to
+  the kit under the kit lock (WORKFLOWS.md, "Changing the kit").
 ```
 
 **Save every report the moment it arrives.** Save each fix-agent, QA and review report to a
 durable file, `<scratchpad>/reviews/<pr>-round<n>.md`, and point the next brief at that file.
 Agents' task output files are transcripts. They can be empty, and they are not meant to be read
-back. Findings that only exist in the orchestrator's context are lost to the next agent.
+back. Findings that only exist in one session's context are lost to the next agent.
 
 **When to repeat QA.** A follow-up that changes production code gets a full QA pass again. A
 follow-up that only adds or changes tests gets preflight, including its negative control, and
-the scoped suites instead. The orchestrator checks that the diff really touches only test files.
+the scoped suites instead. Check that the diff really touches only test files.
 
 **Run the slow gates last.** Run the full `pnpm run verify` and the E2E baseline only on a head
 that has passed QA and review with nothing blocking. A gate run on an earlier head goes stale as
 soon as the fixes land.
 
-The orchestrator sends confirmed findings back to a fresh fix agent. It re-runs the affected
+Send confirmed findings back to a fresh fix agent (or fix them yourself, in the session that owns the work). It re-runs the affected
 gates, then has the new head go through QA and review again, until nothing blocking remains. The
 PR records each round: its Evidence section gets the QA results beside the author's, and its
 Review section gets the findings and their classification.

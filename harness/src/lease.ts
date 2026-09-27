@@ -1,7 +1,7 @@
 /**
  * Machine-wide leases: who may start, stop or drive Vortex, and who may patch a checkout.
  *
- * Several agents (an orchestrator, its fix and QA agents) may use this kit at once. Before
+ * Several agent sessions (and their fix and QA subagents) may use this kit at once. Before
  * leases, `up` quietly quit whatever harness instance was running, so a second agent ended
  * the first one's session. Each cache runs one Vortex; agents that need one each take a slot
  * of their own (slots.ts), whose cache has its own instance lease.

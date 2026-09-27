@@ -126,12 +126,12 @@ Report each result in the PR.
 
 ## More than one issue
 
-Don't fix a batch of reported issues in one context. Triage them. Then hand each issue to a fresh
-subagent with its own worktree and slot (`worktree add <name>`, then `--owner <name> --worktree
-<name> --slot auto` on every command), so they can run in parallel, and have each PR reviewed by
-another fresh agent in a slot of its own. Only the orchestrating session edits this kit: subagents
-end their reports with **Kit lessons**, and the orchestrator turns those into kit changes, tests and
-docs. Timing gates run with the machine otherwise idle. See "Several issues at once" in
+Don't fix a batch of reported issues in one context: one session or fresh subagent per issue, each
+with its own worktree and slot (`worktree add <name>`, then `--owner <name> --worktree <name>
+--slot auto` on every command), and each PR reviewed by another fresh agent in a slot of its own.
+There is no orchestrator; other sessions may be running. Change this kit only under the kit lock
+(`kit lock`, `kit sync`, edit, `pnpm run ci`, commit, `kit push`, `kit unlock`). Time things only
+when `slots` shows no other instance running. See "Several agents at once" in
 `harness/WORKFLOWS.md`.
 
 ## Git

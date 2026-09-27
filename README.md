@@ -16,7 +16,7 @@ It has two halves:
   checks, and checks a Vortex PR before review.
 
 Several doodlebots can work at once, each on its own issue in its own Vortex worktree and
-instance slot. One orchestrator session briefs them and alone maintains this kit.
+instance slot, each looking after itself. Changes to the kit itself go through a global kit lock.
 
 Based on [vortex-mcp](https://github.com/alandtse/vortex-mcp) by Alan Tse. License:
 [GPL-3.0-only](LICENSE.md).
@@ -47,15 +47,15 @@ Collections need a Nexus login, done once per machine:
 
 ## Where to read next
 
-| File                                                 | For                                                        |
-| ---------------------------------------------------- | ---------------------------------------------------------- |
-| [AGENTS.md](AGENTS.md)                               | Agents: how to work in this repo                           |
-| [harness/AGENTS.md](harness/AGENTS.md)               | The operating manual: every command, lease and slot        |
-| [harness/WORKFLOWS.md](harness/WORKFLOWS.md)         | Bug fixes, features, designs, orchestrating several agents |
-| [harness/PULL-REQUESTS.md](harness/PULL-REQUESTS.md) | Vortex PR titles, descriptions, briefs and review          |
-| [KNOWLEDGE.md](KNOWLEDGE.md)                         | Vortex behaviours that fail silently                       |
-| [ARCHITECTURE.md](ARCHITECTURE.md)                   | Why the extension reflects Vortex's API                    |
-| `.claude/skills/`                                    | Skills: developing Vortex, driving its UI, UI tests        |
+| File                                                 | For                                                  |
+| ---------------------------------------------------- | ---------------------------------------------------- |
+| [AGENTS.md](AGENTS.md)                               | Agents: how to work in this repo                     |
+| [harness/AGENTS.md](harness/AGENTS.md)               | The operating manual: every command, lease and slot  |
+| [harness/WORKFLOWS.md](harness/WORKFLOWS.md)         | Bug fixes, features, designs, several agents at once |
+| [harness/PULL-REQUESTS.md](harness/PULL-REQUESTS.md) | Vortex PR titles, descriptions, briefs and review    |
+| [KNOWLEDGE.md](KNOWLEDGE.md)                         | Vortex behaviours that fail silently                 |
+| [ARCHITECTURE.md](ARCHITECTURE.md)                   | Why the extension reflects Vortex's API              |
+| `.claude/skills/`                                    | Skills: developing Vortex, driving its UI, UI tests  |
 
 ## Connecting an MCP client
 
