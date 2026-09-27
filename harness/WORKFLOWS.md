@@ -72,9 +72,16 @@ the Mods page stays mounted while hidden (KNOWLEDGE.md).
 
 ## Before a Vortex pull request is ready
 
+**The orchestrator opens even a draft PR only when it is ready to be looked at**: the author's
+evidence is complete, `pnpm run verify` passed on the head, the adversarial QA has given its
+verdict and its findings are addressed, and anything visible has before/after clips. A pushed
+branch is not a PR. Until then, work and review happen on the branch. The user is told the branch
+is ready for review, not shown a PR that will change under them.
+
 A draft PR is not done until each of these is true and stated in its description:
 
-1. **Reproduced and A/B-verified** in the real app, unpatched against patched. Use the same
+1. **Reproduced and A/B-verified** in the real app, unpatched against patched. A change anyone can
+   see (UI, scrolling, animation) has short before/after clips attached, recorded with `record`. Use the same
    commit and the same `--fresh` baseline, with the relevant opt-in check or scenario.
    Timings come from `--production` builds, so React runs as it does for users; `up` fails
    unless the renderer loaded production React (`automation_status.react`).

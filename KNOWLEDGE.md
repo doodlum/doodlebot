@@ -260,6 +260,18 @@ there, a script extender from the last run was discovered at the next fresh acti
 
 ## The UI
 
+### setOpenMainPage returns before the page has changed
+
+A capture right after `vortex_dispatch setOpenMainPage` can catch the previous page. It still
+does, if a page from an earlier session, Settings say, was left open. Wait for a selector the target
+page renders before screenshotting.
+
+### Vortex's state verifiers only check a value's type
+
+A stored setting that has become invalid but still has the right type (a removed design's number)
+passes the verifier, so a verifier can't migrate it. Resolve it where it's read, and have the
+reducer rewrite it.
+
 ### The first-launch notifications cover the bottom of the menu
 
 A fresh profile opens the notifications popover over the menu's lower part, where Play and the
