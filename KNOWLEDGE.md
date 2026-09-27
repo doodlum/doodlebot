@@ -499,6 +499,12 @@ JSON through `readJsonFile` (`harness/src/jsonFile.ts`), which strips it; new re
 - `pnpm exec oxfmt $files` fails with "Expected at least one target file"; splat with `@files`.
 - The agent sandbox refuses `Remove-Item Env:NODE_ENV`; use `$env:NODE_ENV=$null`, or better
   let `pnpm run ai -- build --production` set it for the build only.
+- Windows PowerShell 5.1's `Get-Content -Raw` reads a UTF-8 file as ANSI, so a read-modify-write
+  of a PR body turns 🤖, "→" and "–" into `Ã°Å¸`-style mojibake, and GitHub keeps it. Edit bodies
+  with Node (`fs.readFileSync(f, "utf8")`) or `-Encoding UTF8`, then grep the result for `Ã`.
+  `Set-Content -Encoding utf8` also adds a BOM, which breaks `package.json` for pnpm.
+- Node one-liners through `bash -c`/heredocs lose backslashes: `"\r?\n"` in a regex, or
+  `J:\tools\...`, come out as raw control characters. Put anything with escapes in a script file.
 
 ### tsx: a scratch script can't import the kit by path, and `page.evaluate` loses `__name`
 
