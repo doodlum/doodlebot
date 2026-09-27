@@ -134,6 +134,17 @@ and doc entry (AGENTS.md, "Every automation request improves the kit"). The next
 it briefs inherits them. A subagent that is blocked on a missing capability stops and reports it
 rather than improvising a private workaround.
 
+### Revisiting closed PRs: the doodlebot queue
+
+An upstream PR the user closed with no draft on their fork hasn't been looked at by a doodlebot
+yet: queue it, one agent each. The agent reads the PR, its diff and its thread, **and the linked
+Linear issue's comments**, where maintainers often give the reason for closing and the GitHub
+thread stays empty. It checks whether the problem still exists on current upstream/master, then
+either redoes the fix on a fresh branch (cherry-picking the old one where it still applies, and
+addressing the feedback), or writes down why no draft is needed. Both outcomes close the queue
+entry. `gh pr view <n> --json title,body,comments,reviews,state,closedAt` is more reliable than
+`--comments`.
+
 ### Running agents in parallel: a worktree and a slot each
 
 Several agents can drive Vortex at once, each on its own project, as long as none shares a checkout,

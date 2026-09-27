@@ -459,6 +459,14 @@ can't tell "waiting at Install Now" from "about to begin". `collection_install_s
 `driver` prop of Vortex's always-mounted collection dialogs from React's fiber tree, a private
 shape; it says `found: false` when a build stops passing it.
 
+### On Windows, "make a folder unreadable" doesn't make stat fail
+
+`fs.stat` on a directory still succeeds with a deny-all ACL, or while another process holds it
+open exclusively, so neither reproduces a stat failure. And Vortex's `fs.statAsync`
+(`util/fs.ts`, `genFSWrapperAsync`/`errorRepeat`) silently retries `EPERM`, `EBUSY`, `EIO`,
+`EMFILE` and `UNKNOWN`, then shows a blocking File busy, permission or I/O dialog: such an error
+reaches a caller's `.catch` only after the user cancels. Inject the error in a unit test instead.
+
 ## Deployment
 
 ### A cleared primary tool is `null`, not absent
