@@ -148,6 +148,14 @@ and doc entry (AGENTS.md, "Every automation request improves the kit"). The next
 it briefs inherits them. A subagent that is blocked on a missing capability stops and reports it
 rather than improvising a private workaround.
 
+### Review starts when the design is settled
+
+While the user is still shaping a change (choosing between variants, asking for new ones),
+the work isn't ready for QA. Don't start or keep a reviewer on it: every new direction makes its
+findings stale, and its Vortex is one more window on the user's screen. The author iterates, the
+user tries the demo, and QA begins only when the user says the design is settled (or the change has
+no design questions). Pause a running reviewer as soon as the direction changes.
+
 ### A reviewer runs only the head it reviews
 
 A reviewer that keeps a Vortex up on an older head, while the author works on a newer one, puts a
