@@ -612,6 +612,8 @@ JSON through `readJsonFile` (`harness/src/jsonFile.ts`), which strips it; new re
   of a PR body turns 🤖, "→" and "–" into `Ã°Å¸`-style mojibake, and GitHub keeps it. Edit bodies
   with Node (`fs.readFileSync(f, "utf8")`) or `-Encoding UTF8`, then grep the result for `Ã`.
   `Set-Content -Encoding utf8` also adds a BOM, which breaks `package.json` for pnpm.
+- The agent sandbox's Remove-Item guard reads `git rm` in a PowerShell command as a deletion, and
+  refuses the whole command, parts before it included. Run `git rm` through Bash.
 - `[IO.File]::ReadAllText` and other .NET calls resolve relative paths against the process's
   directory, not PowerShell's location: pass absolute paths.
 - The kit's ffmpeg (Playwright's build) can't decode PNG or WebP, so it can't assemble contact
