@@ -79,29 +79,31 @@ app per assertion.
 
 ## Panel-system regression
 
-Use `pnpm run ai:test:panels` against a running Bethesda sandbox for panel
-creation, four-panel layouts, resizing, content focus, Home scoping and
-persistence. It replaces the split-view trials. Run `--verify-saved`
-after stopping and reopening the same sandbox to verify disk persistence.
-Match `VORTEX_AI_OWNER` to the instance owner.
+Use `pnpm run ai:test:panels` against a running Bethesda sandbox to verify the
+right-hand split view. Match `VORTEX_AI_OWNER` to the instance owner. The test
+restores Home and per-sidebar game workspaces and the window size. The sidebar
+page's modern header has the Dock right toggle (`[data-split-view-toggle]`): it
+keeps one icon, changes `aria-pressed` and its highlight when open, and animates
+both directions with the sidebar's width timing. The opened right-hand page has
+no split toggle. Its parent toggle says **Close {page name}**. Legacy pages have
+no temporary panel header.
 
 Use `clickByName(mcp, query, { selector, index? })` for panel-local controls so
-large tables in other panels cannot exhaust the snapshot node budget. Modern
-pages use a Close control in their header; older pages and the empty chooser
-use a fallback action row. Check the visible placement dropdown and adaptive
-icon. New panels show sidebar-row choices and exclude pages already open.
+large tables in other panels cannot exhaust the snapshot node budget. The
+headerless chooser uses sidebar-row choices and excludes pages already open.
 On Home, compare choices with the Home sidebar; game-only pages must not appear.
-Home and each game retain separate layouts when switching contexts.
-After dragging a divider, check that the add-panel icon's cell widths change
-with the workspace. The default candidate depends on wide versus tall geometry.
-Sidebar navigation should focus an already-open page or replace the page
-in the active panel when it is not open, even if another panel is larger.
-One layout persists per game. Every open panel page has the selected sidebar
-background. Only the focused panel's page carries the outline and
-`aria-current="page"`; check both expanded and collapsed sidebars.
-Verify panel activation when clicking actual page content
-or focusing its inputs. Pop-outs
-have been removed; no panel window action should be available.
+Drag the divider to each edge, then reopen to verify the removed partner is
+forgotten. Narrow the window until two 440px panes no longer fit; the partner
+should animate away and the toggle should fade out, then fade in unpressed
+when widened. Arrow keys change the ratio and double click restores 50/50. At
+an intermediate window width, press Arrow repeatedly; both panes must remain
+at least 440px wide until an explicit edge collapse. With Plugins in a narrow
+pane, scroll its legacy sticky toolbar to confirm the trailing actions remain
+reachable. Sample the opening frames:
+a CSS transition duration alone does not prove a visible
+animation. Sidebar navigation loads that page's own per-game workspace without
+changing the layout attached to the previously selected sidebar page. Returning
+to it restores its split and partner, including after a restart.
 
 ## Extension-level unit tests
 

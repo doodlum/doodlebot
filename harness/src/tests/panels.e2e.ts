@@ -1,6 +1,6 @@
-/** Live regression for page-per-panel layouts in a running Bethesda sandbox. */
-import fs from "node:fs";
+/** Live regression for the header-driven, right-hand split view. */
 import { expect } from "@playwright/test";
+
 import { attachToRenderer, captureScreenshot } from "../cdp";
 import { loadConfig } from "../config";
 import { claimInstanceLease } from "../instance";
@@ -10,387 +10,356 @@ import { clickByName } from "../uiDriver";
 interface Workspace {
   root: unknown;
   panels: Record<string, { id: string; pageId: string }>;
-  focusedPanel: string;
   nextId: number;
-  recent: string[];
 }
+
+const onePanel = (pageId: string): Workspace => ({
+  root: { kind: "panel", id: "panel-1" },
+  panels: { "panel-1": { id: "panel-1", pageId } },
+  nextId: 2,
+});
+
 const config = loadConfig();
-claimInstanceLease(config, "panel-only regression", {}, { attach: true });
+claimInstanceLease(config, "split-view regression", {}, { attach: true });
 const mcp = new VortexMcpClient({ port: config.mcpPort, token: config.mcpToken });
 await mcp.waitUntilReady();
 expect(await mcp.call("vortex_query", { selector: "activeGameId" })).toBe("fallout4");
 const handle = await attachToRenderer(config);
-const page = handle.page;
-const button = (name: string) => page.getByRole("button", { name, exact: true });
+const { page } = handle;
 const click = (name: string) => clickByName(mcp, { role: "button", name });
-const addPanel = () => click("Add panel");
-const assertRightToolbar = async () => {
-  const titlebar = page.locator("[data-app-titlebar]");
-  const add = await button("Add panel").boundingBox();
-  const menu = await button("Choose panel position").boundingBox();
-  const profile = await titlebar.locator('[data-testid="profile-menu-trigger"]').boundingBox();
-  const premiumGroup = titlebar.locator("[data-header-premium-group]");
-  const premium = await premiumGroup.locator('[data-testid="premium-indicator"]').boundingBox();
-  const separators = await premiumGroup.locator('span[aria-hidden="true"]').all();
-  const premiumDivider = await separators[0]?.boundingBox();
-  const version = await titlebar.locator('[data-testid="version-indicator"]').boundingBox();
-  const windowDivider = await titlebar.locator("[data-header-window-divider]").boundingBox();
-  const minimize = await titlebar.getByRole("button", { name: "Minimize" }).boundingBox();
-  if (
-    !add ||
-    !menu ||
-    !profile ||
-    !premium ||
-    !premiumDivider ||
-    !version ||
-    !windowDivider ||
-    !minimize
-  )
-    throw new Error("Top-bar controls are not visible");
-  const width = await page.evaluate(() => window.innerWidth);
-  expect(add.x).toBeGreaterThan(width * 0.65);
-  expect(Math.abs(add.x + add.width - menu.x)).toBeLessThan(2);
-  expect(add.height).toBe(profile.height);
-  expect(menu.height).toBe(profile.height);
-  expect(add.width).toBe(28);
-  expect(menu.width).toBe(18);
-  expect(profile.width).toBe(add.width + menu.width);
-  expect(profile.x).toBeGreaterThanOrEqual(menu.x + menu.width);
-  expect(separators).toHaveLength(1);
-  expect(premium.x).toBeGreaterThan(profile.x + profile.width);
-  expect(premiumDivider.x).toBeGreaterThan(premium.x + premium.width);
-  expect(version.x).toBeGreaterThan(premiumDivider.x + premiumDivider.width);
-  expect(windowDivider.x).toBeGreaterThan(version.x + version.width);
-  expect(minimize.x).toBeGreaterThan(windowDivider.x + windowDivider.width);
-  expect(Math.abs(premium.y - version.y)).toBeLessThan(1);
-  expect(premium.height).toBe(version.height);
-  expect(Math.abs(windowDivider.y - premiumDivider.y)).toBeLessThan(1);
-  expect(
-    await titlebar.locator('[data-testid="profile-menu-trigger"]').getAttribute("aria-haspopup"),
-  ).toBe("menu");
-};
-const assertCloseCornerSpacing = async (panelName: string, closeName: string) => {
-  const frame = await page.getByRole("region", { name: panelName, exact: true }).boundingBox();
-  const close = await button(closeName).boundingBox();
-  if (!frame || !close) throw new Error(`Cannot measure ${panelName} close control`);
-  const rightGap = frame.x + frame.width - close.x - close.width;
-  expect(rightGap).toBeGreaterThan(10);
-  expect(rightGap).toBeLessThan(17);
-  const header = page
-    .getByRole("region", { name: panelName, exact: true })
-    .locator("[data-panel-header-actions], [data-panel-plain-header-actions]");
-  await expect(header.locator('span[aria-hidden="true"]')).toHaveCount(0);
-};
-const assertModernCloseCorner = async (panelName: string, closeName: string) => {
-  const header = page
-    .getByRole("region", { name: panelName, exact: true })
-    .locator("[data-page-header]");
-  await expect(header).toBeVisible();
-  await expect(button(closeName)).toBeVisible();
-  const headerBounds = await header.boundingBox();
-  const closeBounds = await button(closeName).boundingBox();
-  if (!headerBounds || !closeBounds) throw new Error(`Cannot measure ${panelName} modern header`);
-  expect(Math.abs(closeBounds.y - headerBounds.y - 12)).toBeLessThan(0.5);
-  expect(
-    Math.abs(headerBounds.x + headerBounds.width - closeBounds.x - closeBounds.width - 12),
-  ).toBeLessThan(0.5);
-};
-const assertWrappedModernToolbar = async (panelName: string, closeName: string) => {
-  const header = page
-    .getByRole("region", { name: panelName, exact: true })
-    .locator("[data-page-header]");
-  const toolbar = header.locator("[data-page-header-toolbar]");
-  await expect(toolbar).toBeVisible();
-  await expect(header.locator("[data-panel-header-divider]")).toHaveCount(0);
-  const contentBounds = await header.locator(".max-w-8xl").boundingBox();
-  const toolbarBounds = await toolbar.boundingBox();
-  const closeBounds = await button(closeName).boundingBox();
-  if (!contentBounds || !toolbarBounds || !closeBounds)
-    throw new Error(`Cannot measure ${panelName} wrapped toolbar`);
-  expect(toolbarBounds.y).toBeGreaterThanOrEqual(closeBounds.y + closeBounds.height);
-  expect(
-    Math.abs(contentBounds.x + contentBounds.width - toolbarBounds.x - toolbarBounds.width - 24),
-  ).toBeLessThan(1);
-};
-const panels = page.locator("[data-panel-id]");
-const saved = (scope: string) =>
-  mcp.call<Workspace>("vortex_query", {
-    path: ["settings", "panels", "layouts", scope, "__workspace"],
+const saved = (scope: string, pageId: string) =>
+  mcp.call<Workspace | undefined>("vortex_query", {
+    path: ["settings", "panels", "layouts", scope, pageId],
   });
-const setWorkspace = (scope: string, workspace: Workspace) =>
+const setWorkspace = (scope: string, pageId: string, workspace: Workspace) =>
   mcp.call("vortex_dispatch", {
     action: "type:SET_PANEL_WORKSPACE",
-    args: [{ scope, layoutKey: "__workspace", workspace }],
+    args: [{ scope, layoutKey: pageId, workspace }],
+  });
+const removeWorkspace = (scope: string, pageId: string) =>
+  mcp.call("vortex_dispatch", {
+    action: "type:REMOVE_PANEL_WORKSPACE",
+    args: [{ scope, layoutKey: pageId }],
   });
 const selectPage = (pageId: string) =>
   mcp.call("vortex_dispatch", { action: "setOpenMainPage", args: [pageId, false] });
+const panes = page.locator("[data-panel-id]");
+const toggle = page.locator("[data-split-view-toggle]");
+const separator = page.getByRole("separator", { name: "Resize panel columns" });
 const choose = async (id: string) => {
-  const choice = page.locator(`[data-panel-choice="${id}"]`).last();
+  const choice = page.locator(`[data-panel-choice="${id}"]`);
   await expect(choice).toBeVisible();
   await choice.click();
 };
-const capture = (label: string) => captureScreenshot(config, { label, handle }).then(console.log);
-const onePanel = (pageId: string): Workspace => ({
-  root: { kind: "panel", id: "panel-1" },
-  panels: { "panel-1": { id: "panel-1", pageId } },
-  focusedPanel: "panel-1",
-  nextId: 2,
-  recent: [pageId],
-});
 const originalViewport = page.viewportSize();
-let originalGame: Workspace | undefined;
+let originalMods: Workspace | undefined;
+let originalPlugins: Workspace | undefined;
 let originalHome: Workspace | undefined;
-let originalCompact: boolean | undefined;
+
 try {
   await click("Fallout 4");
-  await expect(button("Add panel")).toBeVisible({ timeout: 30000 });
-  originalGame = await saved("fallout4");
-  originalCompact = await mcp.call<boolean>("vortex_query", {
-    path: ["settings", "interface", "alwaysCompactHeaders"],
-  });
-  expect(originalGame.panels[originalGame.focusedPanel]?.pageId).toBeTruthy();
-  if (process.argv.includes("--verify-saved")) {
-    const expected = JSON.parse(
-      fs.readFileSync("harness/.artifacts/panels-expected-after-restart.json", "utf8"),
-    ) as Workspace;
-    expect(originalGame).toEqual(expected);
-    await expect(panels).toHaveCount(Object.keys(expected.panels).length);
-    await expect(page.locator("[data-panel-tabbar], [data-panel-new-tab]")).toHaveCount(0);
-    console.log("Saved page-per-panel layout survived a clean Vortex restart.");
-  } else {
-    await mcp.call("ui_set_viewport", { width: 1920, height: 1080 });
-    await assertRightToolbar();
-    await mcp.call("ui_set_viewport", { width: 960, height: 720 });
-    await assertRightToolbar();
-    await mcp.call("ui_set_viewport", { width: 1920, height: 1080 });
-    const profileLabel = await page
-      .locator('[data-testid="profile-menu-trigger"]')
-      .getAttribute("aria-label");
-    if (!profileLabel) throw new Error("The profile menu has no accessible label");
-    await click(profileLabel);
-    await expect(page.getByRole("menuitem", { name: "View profile on web" })).toBeVisible();
-    await capture("titlebar-profile-menu");
-    await page.keyboard.press("Escape");
-    if (await button("Open menu").count()) await click("Open menu");
-    await setWorkspace("fallout4", onePanel("Mods"));
-    await selectPage("Mods");
-    await expect(page.getByRole("region", { name: "Mods panel", exact: true })).toBeVisible();
-    await expect(
-      page.getByRole("region", { name: "Mods panel", exact: true }).locator("[data-panel-outline]"),
-    ).toHaveCSS("border-top", "2px solid rgb(82, 82, 91)");
-    await expect(panels).toHaveCount(1);
-    await expect(page.locator("[data-panel-tabbar], [data-panel-new-tab]")).toHaveCount(0);
-    await expect(page.getByRole("tab", { name: "Mods", exact: true })).toHaveCount(0);
-    await expect(button("Add panel")).toHaveAttribute("data-panel-next-position", "right");
-    await click("Choose panel position");
-    await expect(page.getByRole("menuitem", { name: "Right column" })).toBeVisible();
-    await expect(page.getByRole("menuitem", { name: /panel tabs/i })).toHaveCount(0);
-    await page.keyboard.press("Escape");
+  originalMods = await saved("fallout4", "Mods");
+  originalPlugins = await saved("fallout4", "gamebryo-plugins");
+  await mcp.call("ui_set_viewport", { width: 1920, height: 1080 });
+  await setWorkspace("fallout4", "Mods", onePanel("Mods"));
+  await setWorkspace("fallout4", "gamebryo-plugins", onePanel("gamebryo-plugins"));
+  await selectPage("Mods");
+  await expect(panes).toHaveCount(1);
+  await expect(toggle).toHaveAttribute("aria-label", "Enter split view");
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  await expect(page.locator("[data-panel-plain-header-actions]")).toHaveCount(0);
+  const inactiveBackground = await toggle.evaluate(
+    (button) => getComputedStyle(button).backgroundColor,
+  );
 
-    await addPanel();
-    await expect(panels).toHaveCount(2);
-    const chooser = page.locator('[data-panel-chooser="panel"]');
-    await expect(chooser).toBeVisible();
-    await expect(chooser.locator("[data-panel-choice]").first()).toBeFocused();
-    await expect(chooser.locator('[data-panel-choice="Mods"]')).toHaveCount(0);
-    await expect(chooser.locator('[data-panel-choice="Dashboard"]')).toHaveCount(0);
-    await expect(chooser.getByRole("textbox")).toHaveCount(0);
-    await expect(button("Close new panel")).toHaveCount(1);
-    await assertCloseCornerSpacing("Mods panel", "Close Mods panel");
-    await assertModernCloseCorner("Mods panel", "Close Mods panel");
-    await assertCloseCornerSpacing("New panel panel", "Close new panel");
-    await expect(page.getByRole("button", { name: /new tab/i })).toHaveCount(0);
-    await choose("gamebryo-plugins");
-    await expect(page.getByRole("region", { name: "Plugins panel", exact: true })).toBeVisible();
-    await expect(page.getByRole("region", { name: "Mods panel", exact: true })).toBeVisible();
-    await expect(
-      page
-        .getByRole("region", { name: "Plugins panel", exact: true })
-        .locator("[data-panel-outline]"),
-    ).toHaveCSS("border-top", "2px solid rgb(82, 82, 91)");
-    await expect(
-      page.getByRole("region", { name: "Mods panel", exact: true }).locator("[data-panel-outline]"),
-    ).toHaveCSS("border-top", "1px solid rgb(29, 29, 33)");
-    await mcp.call("vortex_dispatch", {
-      action: "type:SET_ALWAYS_COMPACT_HEADERS",
-      args: [true],
-    });
-    try {
-      const modernTitle = page.locator("#page-Mods h2");
-      const modernHeader = modernTitle.locator('xpath=ancestor::div[contains(@class, "py-3")][1]');
-      const legacyHeader = page.locator("[data-panel-plain-actions]");
-      const legacyTitle = legacyHeader.locator("h2");
-      await expect(modernHeader).toHaveCSS("height", "53px");
-      await assertModernCloseCorner("Mods panel", "Close Mods panel");
-      await expect(
-        page
-          .getByRole("region", { name: "Mods panel", exact: true })
-          .locator("[data-panel-header-divider]"),
-      ).toHaveCount(0);
-      await expect(legacyHeader).toHaveCSS("height", "53px");
-      await expect(legacyHeader).toHaveCSS("background-color", "rgb(29, 29, 33)");
-      await expect(legacyTitle).toHaveCSS("font-size", "18px");
-      await expect(legacyTitle).toHaveCSS("color", "rgb(161, 161, 170)");
-      await expect(legacyHeader.locator("svg").first()).toHaveCSS("width", "28px");
-      await expect(page.locator("#page-gamebryo-plugins .panel > .panel-body")).toHaveCSS(
-        "background-color",
-        "rgb(29, 29, 33)",
-      );
-      await expect(page.locator("#page-gamebryo-plugins .mainpage-header-container")).toHaveCSS(
-        "background-color",
-        "rgb(41, 41, 46)",
-      );
-      const modernBounds = await modernHeader.boundingBox();
-      const legacyBounds = await legacyHeader.boundingBox();
-      const modernClose = await button("Close Mods panel").boundingBox();
-      const legacyClose = await button("Close Plugins panel").boundingBox();
-      if (!modernBounds || !legacyBounds || !modernClose || !legacyClose)
-        throw new Error("Compact headers are unavailable");
-      expect(Math.abs(modernBounds.y - legacyBounds.y)).toBeLessThan(0.5);
-      expect(Math.abs(modernBounds.height - legacyBounds.height)).toBeLessThan(0.5);
-      expect(Math.abs(modernClose.y - legacyClose.y)).toBeLessThan(0.5);
-      await capture("panels-compact-legacy-header");
-    } finally {
-      await mcp.call("vortex_dispatch", {
-        action: "type:SET_ALWAYS_COMPACT_HEADERS",
-        args: [originalCompact],
-      });
+  const opening = await page.evaluate(async () => {
+    const sidebar = [...document.querySelectorAll<HTMLElement>("[class]")].find((element) =>
+      element.classList.contains("transition-[width]"),
+    );
+    const sidebarDuration = sidebar ? getComputedStyle(sidebar).transitionDuration : "";
+    document.querySelector<HTMLButtonElement>("[data-split-view-toggle]")?.click();
+    const widths: number[] = [];
+    let splitDuration = "";
+    for (let frame = 0; frame < 20; frame++) {
+      await new Promise(requestAnimationFrame);
+      const second = document.querySelector<HTMLElement>("[data-panel-split-second]");
+      widths.push(Math.round(second?.getBoundingClientRect().width ?? 0));
+      if (second) splitDuration = getComputedStyle(second).transitionDuration;
     }
-    await mcp.call("ui_set_viewport", { width: 1280, height: 720 });
-    await expect(page.locator("#page-Mods h2").getByText("Mods")).toBeVisible();
-    await capture("panels-no-tabs-narrow-two");
-    await mcp.call("ui_set_viewport", { width: 1920, height: 1080 });
-    const modsButton = page.locator('[data-panel-sidebar-page="Mods"] button[aria-label="Mods"]');
-    const pluginsButton = page.locator(
-      '[data-panel-sidebar-page="gamebryo-plugins"] button[aria-label="Plugins"]',
-    );
-    await expect(modsButton).toHaveClass(/bg-surface-low/);
-    await expect(pluginsButton).toHaveClass(/bg-surface-low/);
-    await expect(pluginsButton).toHaveClass(/ring-2/);
-    await expect(pluginsButton).toHaveClass(/ring-neutral-600/);
-    const pluginsSortButton = page.locator("#page-gamebryo-plugins .mainpage-header #btn-sort");
-    await expect(pluginsSortButton).toBeVisible();
-    const modsBoundsBefore = await page.locator("#page-Mods").boundingBox();
-    await page.locator("#page-Mods h2").click();
-    await expect(modsButton).toHaveClass(/ring-2/);
-    await expect(pluginsButton).not.toHaveClass(/ring-2/);
-    await expect(pluginsSortButton).toBeVisible();
-    const modsBoundsAfter = await page.locator("#page-Mods").boundingBox();
-    if (!modsBoundsBefore || !modsBoundsAfter) throw new Error("Mods page bounds are unavailable");
-    for (const key of ["x", "y", "width", "height"] as const)
-      expect(Math.abs(modsBoundsBefore[key] - modsBoundsAfter[key])).toBeLessThan(0.5);
-    await click("Health check");
-    await expect(
-      page.getByRole("region", { name: "Health check panel", exact: true }),
-    ).toBeVisible();
-    await assertModernCloseCorner("Health check panel", "Close Health check panel");
-    await assertWrappedModernToolbar("Health check panel", "Close Health check panel");
-    await mcp.call("ui_set_viewport", { width: 1280, height: 720 });
-    await assertModernCloseCorner("Health check panel", "Close Health check panel");
-    await assertWrappedModernToolbar("Health check panel", "Close Health check panel");
-    await mcp.call("ui_set_viewport", { width: 1920, height: 1080 });
-    const healthWorkspace = await saved("fallout4");
-    await setWorkspace("fallout4", onePanel("Health check"));
-    await expect(panels).toHaveCount(1);
-    await expect(button("Close Health check panel")).toHaveCount(0);
-    const singleHeader = page
-      .getByRole("region", { name: "Health check panel", exact: true })
-      .locator("[data-page-header]");
-    const singleContentBounds = await singleHeader.locator(".max-w-8xl").boundingBox();
-    const singleToolbarBounds = await singleHeader
-      .locator("[data-page-header-toolbar]")
-      .boundingBox();
-    if (!singleContentBounds || !singleToolbarBounds)
-      throw new Error("Cannot measure the single-panel Health check toolbar");
-    expect(
-      Math.abs(
-        singleContentBounds.x +
-          singleContentBounds.width -
-          singleToolbarBounds.x -
-          singleToolbarBounds.width -
-          24,
-      ),
-    ).toBeLessThan(1);
-    await setWorkspace("fallout4", healthWorkspace);
-    await expect(panels).toHaveCount(2);
-    await expect(page.getByRole("region", { name: "Plugins panel", exact: true })).toBeVisible();
-    expect(Object.values((await saved("fallout4")).panels).map((panel) => panel.pageId)).toEqual([
-      "Health check",
-      "gamebryo-plugins",
-    ]);
-    await pluginsButton.click();
-    await expect(pluginsButton).toHaveClass(/ring-2/);
-    await expect(page.getByRole("region", { name: "Plugins panel", exact: true })).toHaveAttribute(
-      "data-panel-focused",
-      "true",
-    );
-    const separator = page.getByRole("separator", { name: "Resize panel columns" });
-    await separator.focus();
-    await separator.press("ArrowLeft");
-    await expect(separator).toHaveAttribute("aria-valuenow", "45");
-    await separator.dblclick();
-    await expect(separator).toHaveAttribute("aria-valuenow", "50");
-    await addPanel();
-    await choose("gamebryo-savegames");
-    await expect(panels).toHaveCount(3);
-    await expect(page.locator("#page-gamebryo-savegames .panel > .panel-body")).toHaveCSS(
-      "background-color",
-      "rgb(29, 29, 33)",
-    );
-    await addPanel();
-    await choose("tools_page");
-    await expect(panels).toHaveCount(4);
-    await assertModernCloseCorner("Tools panel", "Close Tools panel");
-    await expect(button("Add panel")).toHaveAttribute("aria-disabled", "true");
-    await expect(page.locator("[data-panel-tabbar], [data-panel-new-tab]")).toHaveCount(0);
-    await capture("panels-no-tabs-four");
-    await click("Close Tools panel");
-    await expect(panels).toHaveCount(3);
-    await click("Game settings");
-    await assertModernCloseCorner("Game settings panel", "Close Game settings panel");
+    return { widths, sidebarDuration, splitDuration };
+  });
+  const finalWidth = Math.max(...opening.widths);
+  expect(opening.widths[0]).toBe(0);
+  expect(opening.widths.some((width) => width > 0 && width < finalWidth)).toBe(true);
+  expect(opening.splitDuration).toBe(opening.sidebarDuration);
+  expect(finalWidth).toBeGreaterThan(650);
+  await expect(panes).toHaveCount(2);
+  await expect(toggle).toHaveCount(1);
+  await expect(toggle).toHaveAttribute("aria-label", "Close new panel");
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  expect(await toggle.evaluate((button) => getComputedStyle(button).backgroundColor)).not.toBe(
+    inactiveBackground,
+  );
+  await expect(page.locator("[data-panel-chooser]")).toBeVisible();
+  const centers = await page.locator("[data-panel-chooser]").evaluate((chooser) => {
+    const outer = chooser.getBoundingClientRect();
+    const inner = chooser.firstElementChild?.getBoundingClientRect();
+    if (!inner) throw new Error("Missing new-panel choices");
+    return {
+      x: Math.abs(outer.x + outer.width / 2 - inner.x - inner.width / 2),
+      y: Math.abs(outer.y + outer.height / 2 - inner.y - inner.height / 2),
+    };
+  });
+  expect(centers.x).toBeLessThan(2);
+  expect(centers.y).toBeLessThan(2);
+  expect(await page.locator("[data-panel-choice]").count()).toBeGreaterThan(0);
+  await expect(page.locator("[data-panel-choice='Mods']")).toHaveCount(0);
+  await expect(page.locator("[data-panel-chooser] header")).toHaveCount(0);
+  await captureScreenshot(config, { label: "split-view-chooser", handle });
 
-    await click("Home");
-    originalHome = await saved("__home");
-    await setWorkspace("__home", onePanel("Dashboard"));
-    await selectPage("Dashboard");
-    await addPanel();
-    const homeChoices = await page
-      .locator("[data-panel-choice]")
-      .evaluateAll((items) => items.map((item) => item.getAttribute("data-panel-choice")));
-    expect(homeChoices).toContain("Games");
-    expect(homeChoices).toContain("Extensions");
-    expect(homeChoices).not.toContain("Mods");
-    await choose("Games");
-    await expect(page.getByRole("region", { name: "Games panel", exact: true })).toBeVisible();
-    await click("Extensions");
-    await expect(page.getByRole("region", { name: "Extensions panel", exact: true })).toBeVisible();
-    await assertModernCloseCorner("Extensions panel", "Close Extensions panel");
-    expect(Object.values((await saved("__home")).panels).map((panel) => panel.pageId)).toEqual([
-      "Dashboard",
-      "Extensions",
-    ]);
-    await capture("panels-no-tabs-home");
-    console.log(
-      "Panel-only navigation, placement, resize, Home scope, and four-panel limit passed.",
-    );
-  }
-} finally {
-  if (originalCompact !== undefined)
-    await mcp.call("vortex_dispatch", {
-      action: "type:SET_ALWAYS_COMPACT_HEADERS",
-      args: [originalCompact],
+  for (const [width, height] of [
+    [1280, 720],
+    [1280, 1000],
+  ]) {
+    await mcp.call("ui_set_viewport", { width, height });
+    await expect(page.locator("[data-panel-chooser]")).toBeVisible();
+    await expect(toggle).toBeVisible();
+    await captureScreenshot(config, {
+      label: `split-view-${String(width)}x${String(height)}`,
+      handle,
     });
-  if (originalHome) await setWorkspace("__home", originalHome);
-  await click("Fallout 4");
-  if (originalGame) {
-    await setWorkspace("fallout4", originalGame);
-    await selectPage(originalGame.panels[originalGame.focusedPanel]?.pageId ?? "Mods");
-    if (!process.argv.includes("--verify-saved"))
-      fs.writeFileSync(
-        "harness/.artifacts/panels-expected-after-restart.json",
-        JSON.stringify(originalGame),
-      );
   }
+  await mcp.call("ui_set_viewport", { width: 1920, height: 1080 });
+
+  await choose("gamebryo-plugins");
+  await expect(page.getByRole("region", { name: "Plugins panel", exact: true })).toBeVisible();
+  await expect(toggle).toHaveCount(1);
+  await expect(toggle).toHaveAttribute("aria-label", "Close Plugins");
+  expect(
+    Object.values((await saved("fallout4", "Mods"))?.panels ?? {}).map((panel) => panel.pageId),
+  ).toEqual(["Mods", "gamebryo-plugins"]);
+  await click("Plugins");
+  await expect(panes).toHaveCount(1);
+  await expect(page.getByRole("region", { name: "Plugins", exact: true })).toBeVisible();
+  await click("Mods");
+  await expect(panes).toHaveCount(2);
+  await expect(toggle).toHaveAttribute("aria-label", "Close Plugins");
+  await expect(page.getByRole("region", { name: "Plugins panel", exact: true })).toBeVisible();
+  await expect(page.locator("[data-panel-plain-header-actions]")).toHaveCount(0);
+  const closing = await page.evaluate(async () => {
+    document.querySelector<HTMLButtonElement>("[data-split-view-toggle]")?.click();
+    const widths: Array<number | null> = [];
+    for (let frame = 0; frame < 18; frame++) {
+      await new Promise(requestAnimationFrame);
+      const second = document.querySelector<HTMLElement>("[data-panel-split-second]");
+      widths.push(second ? Math.round(second.getBoundingClientRect().width) : null);
+    }
+    return widths;
+  });
+  expect(closing.some((width) => width !== null && width > 0 && width < finalWidth)).toBe(true);
+  expect(closing).toContain(null);
+  await expect(panes).toHaveCount(1);
+  await expect(toggle).toHaveAttribute("aria-label", "Enter split view");
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+
+  await toggle.click();
+  await expect(page.locator("[data-panel-chooser]")).toBeVisible();
+  await choose("tools_page");
+  await expect(page.getByRole("region", { name: "Tools panel", exact: true })).toBeVisible();
+  await expect(toggle).toHaveCount(1);
+  await expect(page.locator("[data-panel-split-second] [data-split-view-toggle]")).toHaveCount(0);
+  await expect(toggle).toHaveAttribute("aria-label", "Close Tools");
+  await toggle.click();
+  await expect(panes).toHaveCount(1);
+  await toggle.click();
+  await expect(page.locator("[data-panel-chooser]")).toBeVisible();
+  await expect
+    .poll(() =>
+      page
+        .locator("[data-panel-split-second]")
+        .evaluate((element) => element.getBoundingClientRect().width),
+    )
+    .toBeGreaterThan(650);
+  expect(
+    Object.values((await saved("fallout4", "Mods"))?.panels ?? {}).map((panel) => panel.pageId),
+  ).toEqual(["Mods", ""]);
+  await choose("gamebryo-plugins");
+  await expect(page.getByRole("region", { name: "Plugins panel", exact: true })).toBeVisible();
+  await separator.focus();
+  await separator.press("ArrowLeft");
+  await expect(separator).toHaveAttribute("aria-valuenow", "45");
+  await separator.dblclick();
+  await expect(separator).toHaveAttribute("aria-valuenow", "50");
+  await mcp.call("ui_set_viewport", { width: 1536, height: 960 });
+  for (let press = 0; press < 10; press++) await separator.press("ArrowRight");
+  const paneWidths = await page.locator("[data-panel-split]").evaluate((split) => ({
+    first: split.querySelector<HTMLElement>("[data-panel-split-first]")?.getBoundingClientRect()
+      .width,
+    second: split.querySelector<HTMLElement>("[data-panel-split-second]")?.getBoundingClientRect()
+      .width,
+  }));
+  expect(paneWidths.first).toBeGreaterThanOrEqual(439);
+  expect(paneWidths.second).toBeGreaterThanOrEqual(439);
+  expect(Number(await separator.getAttribute("aria-valuenow"))).toBeLessThan(80);
+  const pluginHeader = await page
+    .locator("[data-panel-split-second] .mainpage-header")
+    .evaluate((header) => {
+      header.scrollLeft = header.scrollWidth;
+      const scrollLeft = header.scrollLeft;
+      header.scrollLeft = 0;
+      return {
+        overflowX: getComputedStyle(header).overflowX,
+        scrollLeft,
+        clientWidth: header.clientWidth,
+        scrollWidth: header.scrollWidth,
+      };
+    });
+  expect(pluginHeader.overflowX).toBe("auto");
+  expect(pluginHeader.scrollWidth).toBeGreaterThan(pluginHeader.clientWidth);
+  expect(pluginHeader.scrollLeft).toBeGreaterThan(0);
+  const currentSplit = await saved("fallout4", "Mods");
+  if (!currentSplit) throw new Error("Missing saved Mods split");
+  await setWorkspace("fallout4", "Mods", {
+    ...currentSplit,
+    root: { ...(currentSplit.root as object), ratio: 80 },
+  });
+  await expect
+    .poll(
+      async () =>
+        ((await saved("fallout4", "Mods"))?.root as { ratio: number } | undefined)?.ratio ?? 100,
+    )
+    .toBeLessThan(80);
+  await expect
+    .poll(() =>
+      page
+        .locator("[data-panel-split-second]")
+        .evaluate((element) => element.getBoundingClientRect().width),
+    )
+    .toBeGreaterThanOrEqual(439);
+  await captureScreenshot(config, { label: "split-view-plugins-min-width", handle });
+  await mcp.call("ui_set_viewport", { width: 1920, height: 1080 });
+  await separator.dblclick();
+  await expect(separator).toHaveAttribute("aria-valuenow", "50");
+  const divider = await separator.boundingBox();
+  const split = await page.locator("[data-panel-split]").boundingBox();
+  if (!divider || !split) throw new Error("Cannot measure split divider");
+  await separator.hover();
+  await page.mouse.down();
+  await page.mouse.move(split.x + split.width - 1, divider.y + divider.height / 2, {
+    steps: 6,
+  });
+  await page.mouse.up();
+  await expect(panes).toHaveCount(1);
+  await expect(page.getByRole("region", { name: "Mods", exact: true })).toBeVisible();
+
+  await toggle.click();
+  await choose("gamebryo-plugins");
+  await expect
+    .poll(() =>
+      page
+        .locator("[data-panel-split-second]")
+        .evaluate((element) => element.getBoundingClientRect().width),
+    )
+    .toBeGreaterThan(650);
+  const otherDivider = await separator.boundingBox();
+  const otherSplit = await page.locator("[data-panel-split]").boundingBox();
+  if (!otherDivider || !otherSplit) throw new Error("Cannot measure the reopened divider");
+  await separator.hover();
+  await page.mouse.down();
+  await page.mouse.move(otherSplit.x + 1, otherDivider.y + otherDivider.height / 2, {
+    steps: 6,
+  });
+  await page.mouse.up();
+  await expect(panes).toHaveCount(1);
+  await expect(page.getByRole("region", { name: "Plugins", exact: true })).toBeVisible();
+  await click("Mods");
+  await expect(toggle).toHaveAttribute("aria-label", "Enter split view");
+
+  // A narrow content area closes the partner with the same width transition.
+  await setWorkspace("fallout4", "Mods", onePanel("Mods"));
+  await selectPage("Mods");
+  await mcp.call("ui_set_viewport", { width: 960, height: 720 });
+  await expect(toggle).toHaveCount(0);
+  await mcp.call("ui_set_viewport", { width: 1920, height: 1080 });
+  await expect(toggle).toBeVisible();
+  await toggle.click();
+  await choose("tools_page");
+  await expect
+    .poll(() =>
+      page
+        .locator("[data-panel-split-second]")
+        .evaluate((element) => element.getBoundingClientRect().width),
+    )
+    .toBeGreaterThan(650);
+  const resizingFrames = page.evaluate(async () => {
+    const widths: Array<number | null> = [];
+    const toggleOpacities: Array<number | null> = [];
+    for (let frame = 0; frame < 35; frame++) {
+      await new Promise(requestAnimationFrame);
+      const second = document.querySelector<HTMLElement>("[data-panel-split-second]");
+      const button = document.querySelector<HTMLElement>("[data-responsive-split-button]");
+      widths.push(second ? Math.round(second.getBoundingClientRect().width) : null);
+      toggleOpacities.push(button ? Number(getComputedStyle(button).opacity) : null);
+    }
+    return { widths, toggleOpacities };
+  });
+  await mcp.call("ui_set_viewport", { width: 960, height: 720 });
+  const { widths, toggleOpacities } = await resizingFrames;
+  expect(widths.some((width) => width !== null && width > 0 && width < finalWidth)).toBe(true);
+  expect(toggleOpacities.some((opacity) => opacity !== null && opacity > 0 && opacity < 1)).toBe(
+    true,
+  );
+  await expect(panes).toHaveCount(1);
+  await expect(toggle).toHaveCount(0);
+  expect((await saved("fallout4", "Mods"))?.root).toMatchObject({ kind: "panel" });
+  await captureScreenshot(config, { label: "split-view-too-narrow", handle });
+  const appearingFrames = page.evaluate(async () => {
+    const opacities: Array<number | null> = [];
+    for (let frame = 0; frame < 35; frame++) {
+      await new Promise(requestAnimationFrame);
+      const button = document.querySelector<HTMLElement>("[data-responsive-split-button]");
+      opacities.push(button ? Number(getComputedStyle(button).opacity) : null);
+    }
+    return opacities;
+  });
+  await mcp.call("ui_set_viewport", { width: 1920, height: 1080 });
+  expect(
+    (await appearingFrames).some((opacity) => opacity !== null && opacity > 0 && opacity < 1),
+  ).toBe(true);
+  await expect(toggle).toHaveAttribute("aria-label", "Enter split view");
+  await expect(panes).toHaveCount(1);
+
+  await click("Home");
+  originalHome = await saved("__home", "application_settings");
+  // Home's Settings page has the modern header control; Dashboard is legacy.
+  await setWorkspace("__home", "application_settings", onePanel("application_settings"));
+  await selectPage("application_settings");
+  await expect(toggle).toHaveAttribute("aria-label", "Enter split view");
+  await toggle.click();
+  await expect(page.locator("[data-panel-chooser]")).toBeVisible();
+  const homeChoices = await page
+    .locator("[data-panel-choice]")
+    .evaluateAll((items) => items.map((item) => item.getAttribute("data-panel-choice")));
+  expect(homeChoices).toContain("Games");
+  expect(homeChoices).toContain("Extensions");
+  expect(homeChoices).not.toContain("Mods");
+  await choose("Games");
+  await expect(page.getByRole("region", { name: "Games panel", exact: true })).toBeVisible();
+  await expect(toggle).toHaveCount(1);
+  await expect(toggle).toHaveAttribute("aria-label", "Close Games");
+  await captureScreenshot(config, { label: "split-view-home", handle });
+  console.log(
+    "Per-sidebar persistence, split animation, narrow close, chooser, labels, and Home scope passed.",
+  );
+} finally {
+  if (originalHome) await setWorkspace("__home", "application_settings", originalHome);
+  else await removeWorkspace("__home", "application_settings");
+  await click("Fallout 4");
+  if (originalPlugins) await setWorkspace("fallout4", "gamebryo-plugins", originalPlugins);
+  else await removeWorkspace("fallout4", "gamebryo-plugins");
+  if (originalMods) await setWorkspace("fallout4", "Mods", originalMods);
+  else await removeWorkspace("fallout4", "Mods");
+  await selectPage("Mods");
   if (originalViewport) await mcp.call("ui_set_viewport", originalViewport);
   await handle.close();
 }

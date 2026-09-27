@@ -329,6 +329,7 @@ async function manageGameViaUi(
   // and fall back to anything game-ish wrapping this game's artwork. Matching on
   // the image's alt text is what keeps "Fallout 4" from hitting "Fallout 4 VR".
   const tile = await realHoverFirst(config, [
+    `.nxm-image-game:has(img[alt="${gameName}"])`,
     `.game-thumbnail:has(img[alt="${gameName}"])`,
     `.game-list-item:has(img[alt="${gameName}"])`,
     `[class*="game"]:has(> img[alt="${gameName}"])`,
@@ -337,14 +338,21 @@ async function manageGameViaUi(
   await new Promise((resolve) => setTimeout(resolve, 800));
 
   // Prefer Vortex's own stable class over the label, which moves between
-  // versions ("Manage" on 2.6.x, "Add game" on newer layouts).
+  // versions ("Manage" on 2.6.x, "Add game" or "Manual add" on newer layouts).
   const clicked = await tryClick(mcp, [
     ...(tile === undefined ? [] : [`${tile} button.action-manage`]),
     "button.action-manage",
   ]);
 
   if (!clicked) {
-    const manage = await waitForNode(mcp, { role: "button", name: /^(manage|add game)$/i }, 15_000);
+    // Portal-hosted pages can be omitted from a page-wide snapshot even though
+    // their tile is visible. Scope the query to the tile that was hovered.
+    const manage = await waitForNode(
+      mcp,
+      { role: "button", name: /^(manage|add game|manual add)$/i },
+      15_000,
+      tile,
+    );
     await mcp.call("ui_click", { ref: manage.ref });
   }
 

@@ -185,11 +185,12 @@ export async function waitForNode(
   mcp: VortexMcpClient,
   query: NodeQuery,
   timeoutMs = 30_000,
+  selector?: string,
 ): Promise<SnapshotNode> {
   const started = Date.now();
   let last: Snapshot | undefined;
   for (;;) {
-    last = await snapshot(mcp);
+    last = await snapshot(mcp, selector);
     const found = findNodes(last, query);
     if (found.length > 0) return found[0] as SnapshotNode;
     if (Date.now() - started > timeoutMs) {

@@ -8,6 +8,7 @@ import {
   clickInsideDialog,
   findNodes,
   findOne,
+  waitForNode,
   autoAnswerDialogs,
   DEFAULT_DIALOG_POLICIES,
   dialogPolicies,
@@ -64,6 +65,16 @@ function fakeMcp(bySelector: Record<string, SnapshotNode[]>): {
 const NAV = "#fomod-installer-dialog .fomod-nav-buttons";
 
 describe("target matching", () => {
+  it("waits inside a game tile when the page-wide snapshot omits its action", async () => {
+    const selector = '.nxm-image-game:has(img[alt="Fallout 4"])';
+    const { mcp, selectors } = fakeMcp({
+      "": [node("Games")],
+      [selector]: [node("Manual add")],
+    });
+    const found = await waitForNode(mcp, { role: "button", name: /^manual add$/i }, 1000, selector);
+    expect(found.name).toBe("Manual add");
+    expect(selectors).toEqual([selector]);
+  });
   it("clicks within a panel even when a page-wide snapshot omits the target", async () => {
     const selector = '[aria-label="Plugins panel"]';
     const { mcp, clicked, selectors } = fakeMcp({
