@@ -108,6 +108,29 @@ game by itself. Register the path with a raw `type:ADD_DISCOVERED_GAME` dispatch
 
 ## Building Vortex from here
 
+### lease run ran the kit's scripts, under the kit's pnpm
+
+`pnpm run ai -- lease run … pnpm run verify`, typed in a worktree, failed at the `assets` step
+with `ERR_PNPM_BROKEN_LOCKFILE`. `pnpm run` starts the CLI in the kit's own root, so the command
+ran there too, with the kit's pnpm 9 first on PATH. `lease run` now takes the caller's directory
+from `INIT_CWD`, and a command outside the kit gets a cleaned environment (`commandEnv` in
+`source.ts`). Anything else that spawns a Vortex command must do the same: `childEnv` for kit
+code, `commandEnv` for a user's command.
+
+### Worktree chores a build or commit trips on
+
+- `pnpm nx run @vortex/renderer:build` and `pnpm run verify` rewrite `etc/vortex.api.md` (and
+  `etc/Dependency Report.md`) with drift that isn't yours. Restore them before committing; only
+  the kit's `build` and `worktree add` do it for you. Commit a real API change's own lines only.
+- Vortex's husky pre-commit hook runs pnpm: a commit from a shell without pnpm 11 on PATH fails
+  with "pnpm: command not found". Prepend the node22 PATH in the same command.
+- In some sandboxed agent shells a worktree's install fails at electron-rebuild (MSBuild C1083,
+  "Cannot open compiler generated file"), and `pnpm exec vitest` re-runs that install, so even
+  unit tests can't run. Give such an agent a worktree the orchestrator built. For unit tests
+  alone, a vitest config that aliases the native modules (`winapi-bindings`, `drivelist`,
+  `leveldown`, `xxhash-addon`, `@nexusmods/fomod-installer-native`, `@parcel/watcher`) to a
+  Proxy stub, run as `node node_modules/vitest/vitest.mjs run -c <config>`, gets the suites going.
+
 ### The first vitest run in a new worktree installs
 
 `pnpm exec vitest` in a worktree nobody has run tests in yet starts an install and postinstall,
@@ -236,6 +259,19 @@ there, a script extender from the last run was discovered at the next fresh acti
 "found after activation" bug looked fixed.
 
 ## The UI
+
+### The first-launch notifications cover the bottom of the menu
+
+A fresh profile opens the notifications popover over the menu's lower part, where Play and the
+deploy control sit. Dismiss notifications before screenshots of that area.
+
+### A placeholder row hit-tests as the table, not as a row
+
+A virtualised row that hasn't rendered is a `tr` with a single cell, so an `elementFromPoint`
+probe to the right of that cell hits the `TABLE`, not a `tr`. A probe that counts "not a row" as
+fine hides every blank. Count a hit inside the table but outside any cell as blank. The kit's
+mods-scroll sampling runs 50 ms or more after scrolling stops, so it can't see rows that are blank
+_during_ a scrollbar drag. That needs a per-frame probe.
 
 ### Three ways a snapshot can silently go blank
 
@@ -426,9 +462,16 @@ skipped through `markCollectionMemberSkipped` (`util/collectionSkip.ts`). It acc
 member whose tag, file hash **or** logical file name matched, so a required member listed earlier
 that shares a logical file name ("Main File" is common) or an archive hash got a durable
 `rule.ignored = true`, with nothing logged. An ignored member counts as resolved: the review says
-complete, and every later resume skips it. It looks like "a failed download got ignored", but a
-transient failure alone leaves the member failed, and a resume installs it. Check the rules'
-`ignored` flags before blaming downloads; the fix (doodlum/Vortex#17) matches by tag first.
+complete, and every later resume skips it. Tag-first matching (doodlum/Vortex#17) isn't enough on
+its own: nexus members with a fuzzy policy (`prefer`/`latest`) get a `deterministicReferenceTag`
+of just mod page plus install spec, so two files from one page share a tag.
+
+Before blaming this for a user's "ignored" members, check their collection's real member list.
+It's public: `collectionRevision(slug, revision) { modFiles { optional fileId updatePolicy file {
+name modId } } }` on `https://api.nexusmods.com/v2/graphql`, no auth; the slug and revision are
+in vortex.log. In the report that led here no optional shared a name or file with a required
+member, and the `ignored` count matched declined optionals. A transient download failure alone
+leaves a member failed, and a resume installs it (`ai:test:collection-download-retry`).
 
 ### After a completed collection, Vortex stops running its checks
 
@@ -468,6 +511,12 @@ open exclusively, so neither reproduces a stat failure. And Vortex's `fs.statAsy
 reaches a caller's `.catch` only after the user cancels. Inject the error in a unit test instead.
 
 ## Deployment
+
+### The setModEnabled action doesn't make a deployment needed
+
+Dispatching `setModEnabled` through `vortex_dispatch` changes the profile, but nothing marks
+the game as needing a deploy, so a Deploy button or reminder never appears. The
+`set_mods_enabled` tool goes through Vortex's own path, which does. Use the tool.
 
 ### A cleared primary tool is `null`, not absent
 
@@ -551,6 +600,10 @@ JSON through `readJsonFile` (`harness/src/jsonFile.ts`), which strips it; new re
   of a PR body turns 🤖, "→" and "–" into `Ã°Å¸`-style mojibake, and GitHub keeps it. Edit bodies
   with Node (`fs.readFileSync(f, "utf8")`) or `-Encoding UTF8`, then grep the result for `Ã`.
   `Set-Content -Encoding utf8` also adds a BOM, which breaks `package.json` for pnpm.
+- `[IO.File]::ReadAllText` and other .NET calls resolve relative paths against the process's
+  directory, not PowerShell's location: pass absolute paths.
+- The kit's ffmpeg (Playwright's build) can't decode PNG or WebP, so it can't assemble contact
+  sheets; System.Drawing in PowerShell can.
 - PowerShell 5.1's `ConvertFrom-Json` on `gh … --json` output can fold an array into one object.
   Filter with `gh`'s own `--jq` instead.
 - Node one-liners through `bash -c`/heredocs lose backslashes: `"\r?\n"` in a regex, or

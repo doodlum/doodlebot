@@ -7,6 +7,20 @@
  */
 import { spawn } from "node:child_process";
 
+import { commandEnv } from "./source";
+
+/**
+ * Where the caller ran the command from. `pnpm run ai -- lease run …` starts the CLI in this
+ * repo's root, whatever directory the caller was in, so `process.cwd()` is always the kit. pnpm
+ * (and npm) keep the caller's directory in INIT_CWD. Without this, `lease run pnpm run verify`
+ * from a worktree ran the kit's scripts instead, under the kit's pnpm.
+ */
+export function callerCwd(explicit?: string, env: NodeJS.ProcessEnv = process.env): string {
+  if (explicit !== undefined) return explicit;
+  const init = env.INIT_CWD;
+  return init !== undefined && init !== "" ? init : process.cwd();
+}
+
 import {
   holdLease,
   waitForLease,
@@ -68,10 +82,15 @@ export async function runUnderLease(options: RunUnderLeaseOptions): Promise<numb
         shell ? [options.command, ...options.args].map(quoteForShell).join(" ") : options.command,
         shell ? [] : options.args,
         {
-          cwd: options.cwd,
+          cwd: callerCwd(options.cwd),
           stdio: "inherit",
           shell,
-          env: { ...process.env, ...options.env, VORTEX_AI_OWNER: options.owner },
+          // A Vortex command (verify in a worktree) must not inherit the kit's pnpm 9.
+          env: {
+            ...commandEnv(callerCwd(options.cwd)),
+            ...options.env,
+            VORTEX_AI_OWNER: options.owner,
+          },
         },
       );
       child.once("error", reject);

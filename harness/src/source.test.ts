@@ -5,6 +5,7 @@ import path from "node:path";
 
 import {
   ForkError,
+  commandEnv,
   missingBuildOutputs,
   nestedPath,
   needsShell,
@@ -106,4 +107,23 @@ it("gives a checkout's own scripts its pnpm, not the kit's", () => {
   expect(nestedPath(PATH, path.resolve("/tools/node22/pnpm.cmd"), repo)).toBe(
     [path.resolve("/tools/node22"), path.resolve("/Windows/system32")].join(sep),
   );
+});
+
+it("leaves a kit command's environment alone, and cleans a Vortex command's", () => {
+  const repo = path.resolve("/kit");
+  const PATH = [path.join(repo, "node_modules", ".bin"), path.resolve("/Windows")].join(
+    path.delimiter,
+  );
+  const base = {
+    PATH,
+    npm_config_user_agent: "pnpm/9.15.0",
+    VORTEX_AI_PNPM: path.resolve("/node22/pnpm.cmd"),
+  };
+  expect(commandEnv(path.join(repo, "harness"), base, repo)).toEqual(base);
+  const vortex = commandEnv(path.join(repo, ".vortex-worktrees", "fix-a"), base, repo);
+  expect(vortex.npm_config_user_agent).toBeUndefined();
+  expect(vortex.PATH).toBe(
+    [path.resolve("/node22"), path.resolve("/Windows")].join(path.delimiter),
+  );
+  expect(commandEnv(path.resolve("/elsewhere"), base, repo).npm_config_user_agent).toBeUndefined();
 });

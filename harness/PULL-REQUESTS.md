@@ -133,7 +133,7 @@ Read the checkout's AGENTS.md, CLAUDE.md, CODESTYLE.md, docs/testing.md and
 doodlebot/harness/PULL-REQUESTS.md, especially "Getting it right before review" and "Review
 lessons". Before changing code, write your callers, exit paths and behaviour changes list. Then
 write a test that fails on the base, make the smallest complete fix, and run the scoped tests,
-typecheck and lint. Run `pnpm run ai:preflight -- --checkout <checkout> --pr <number>` and resolve
+typecheck and lint. Run `pnpm run ai:preflight -- --owner <name> --checkout <checkout> --pr <number>`, with your Vortex down (its revert check rewrites the checkout) and resolve
 everything it reports. Treat each WARN entry (callers, readers of changed state, dispatchers) as a checklist,
 and write a disposition for each one in your report. Before finishing, stop every background shell or wait loop you
 started; an orphaned `until … sleep` loop outlives you. Commit with Conventional Commits and push to origin. Never skip hooks.
@@ -290,3 +290,9 @@ catch it.
     exercises every major consumer of the changed component, not only the one the fix is for.
     (#24284: a `null` column looked changed on every pass, so every Mods-page row got a new
     object, while the Plugins page, the fix's target, got faster.)
+15. **Check a user-attributed root cause against the user's own data.** A plausible mechanism that
+    reproduces in a hand-built fixture isn't the user's cause until their data shows the same
+    shape. Collection member lists are public (`collectionRevision(slug, revision)` on the Nexus
+    GraphQL API; the slug and revision are in vortex.log), and so are a user's `state.v2`
+    values, from their state copy. (#17: no optional in the user's collection shared a name with a
+    required member, so the name clash couldn't be what they saw.)

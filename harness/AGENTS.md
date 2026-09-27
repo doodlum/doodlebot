@@ -230,6 +230,9 @@ lease, with the instance's cache, ports and token in its environment. `--owner`,
 instance flags (`--slot`, `--worktree`, `--dev-dir`, `--cache-dir`, ports) are the kit's anywhere; other arguments, and all after `--`, are the script's. Outside this repo use
 `.mts` (top-level `await`) and import the kit by the URL in `VORTEX_AI_KIT`:
 
+A script's own path: use `fileURLToPath(import.meta.url)`. `new URL(import.meta.url).pathname`
+keeps `%20` for the space in "Vortex MCP", and writes beside it fail.
+
 ```ts
 const kit: typeof import("file:///C:/dev/doodlebot/harness/src/kit.ts") = await import(
   process.env.VORTEX_AI_KIT!

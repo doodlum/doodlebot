@@ -134,6 +134,21 @@ and doc entry (AGENTS.md, "Every automation request improves the kit"). The next
 it briefs inherits them. A subagent that is blocked on a missing capability stops and reports it
 rather than improvising a private workaround.
 
+### A reviewer runs only the head it reviews
+
+A reviewer that keeps a Vortex up on an older head, while the author works on a newer one, puts a
+window with an outdated design on the user's screen, and it looks like the author's work went
+wrong. Review the head you were given. When the author pushes a new one, `down`, move your
+worktree to it, and only then `up` again. Keep your instance down while you wait.
+
+### A build for the user to try gets its own worktree
+
+When the user wants to try a branch, don't run their Vortex from the author's worktree. It locks
+the checkout, so the author can't rebuild it, and `pr-preflight`'s revert check is refused.
+Make one for them: `worktree add demo-<topic> --ref origin/<branch>`, `up --owner user-demo
+--worktree demo-<topic> --slot auto`. Leave it running until they're done. To show them a new
+head, `down`, `git -C <demo worktree> checkout --detach <sha>`, rebuild, and `up` again.
+
 ### Revisiting closed PRs: the doodlebot queue
 
 An upstream PR the user closed with no draft on their fork hasn't been looked at by a doodlebot

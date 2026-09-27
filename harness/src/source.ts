@@ -101,6 +101,37 @@ export function childEnv(): NodeJS.ProcessEnv {
 }
 
 /**
+ * The environment for a command someone runs through the kit (`lease run`), by where it runs.
+ * Inside this repo, outside its Vortex checkouts, it's the kit's own command: unchanged. Anywhere
+ * else, such as `pnpm run verify` in a worktree, it's a Vortex command, and gets what `childEnv`
+ * gives a nested run: no npm_/PNPM_ variables from the kit's pnpm 9, and a PATH whose first pnpm
+ * is the checkout's. `CI` is left as the caller had it.
+ */
+export function commandEnv(
+  cwd: string,
+  base: NodeJS.ProcessEnv = process.env,
+  repoRoot: string = REPO_ROOT,
+): NodeJS.ProcessEnv {
+  const inside = (dir: string, root: string): boolean => {
+    const relative = path.relative(root, dir);
+    return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+  };
+  const dir = path.resolve(cwd);
+  const vortex =
+    inside(dir, path.join(repoRoot, ".vortex-src")) ||
+    inside(dir, path.join(repoRoot, ".vortex-worktrees"));
+  if (inside(dir, repoRoot) && !vortex) return { ...base };
+  const env: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(base)) {
+    if (/^(npm_|PNPM_|COREPACK_)/i.test(key)) continue;
+    if (value === undefined) continue;
+    env[key] =
+      key.toUpperCase() === "PATH" ? nestedPath(value, base.VORTEX_AI_PNPM, repoRoot) : value;
+  }
+  return env;
+}
+
+/**
  * PATH for a command run inside a Vortex checkout. The kit runs under its own pnpm 9, and
  * `pnpm run` / `npx pnpm@9` put that pnpm and this repo's `node_modules/.bin` first on PATH.
  * A Vortex script that calls `pnpm` itself (the build's `assets` step does) then gets pnpm 9,

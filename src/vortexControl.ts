@@ -1124,7 +1124,10 @@ export async function dispatchAction(
 
   throw new Error(
     `Unknown action, api.ext function, event, or api method: ${name}. Check vortex_describe's ` +
-      "actions/extensionApis/eventNames/apiMethods lists.",
+      "actions/extensionApis/eventNames/apiMethods lists. An action creator that isn't in the " +
+      "public `actions` list (new in a source build, or internal) can still be dispatched by its " +
+      'Redux type with a raw payload: action="type:SET_SOMETHING", args=[payload] ' +
+      "(scan_extension_actions finds the type strings).",
   );
 }
 
