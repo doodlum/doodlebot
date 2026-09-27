@@ -1,4 +1,4 @@
-# doodlebot
+# vortex-doodlebot
 
 An agentic development and testing tool for [Vortex](https://www.nexusmods.com/about/vortex/),
 the Nexus Mods mod manager. AI agents use it to reproduce Vortex bugs, change Vortex's code,
