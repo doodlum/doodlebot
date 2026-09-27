@@ -211,7 +211,7 @@ export async function bootstrap(
   if (missing.length > 0)
     throw new ConfigError(
       `${checkout!} is not fully built: src/main/build lacks ${missing.join(", ")}. Vortex would ` +
-        `start and then fail at the first install. Build it: \`vortex-ai build --checkout ${checkout!}\`` +
+        `start and then fail at the first install. Build it: \`doodlebot build --checkout ${checkout!}\`` +
         ` (or \`node build.mjs\` in its src/main).`,
     );
 
@@ -358,7 +358,7 @@ export async function captureLogin(
   const live = liveDir(config);
   if (!fs.existsSync(path.join(live, "userData"))) {
     throw new ConfigError(
-      "There is no working directory to capture. Start an instance with `vortex-ai up`, " +
+      "There is no working directory to capture. Start an instance with `doodlebot up`, " +
         "log in through Vortex's Log in button, then run this again.",
     );
   }

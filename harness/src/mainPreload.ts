@@ -36,7 +36,7 @@ export interface PreloadRecord {
 /** The preload's source. Plain CommonJS: it runs before any bundler or loader. */
 export function preloadSource(paths: Record<string, string>, recordFile: string): string {
   return `"use strict";
-// Written by vortex-mcp's harness; see harness/src/mainPreload.ts.
+// Written by doodlebot's harness; see harness/src/mainPreload.ts.
 const fs = require("fs");
 const Module = require("module");
 const recordFile = ${JSON.stringify(recordFile)};

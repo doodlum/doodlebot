@@ -1,134 +1,87 @@
 # Agent instructions
 
-This repo is a self-contained automated development and testing suite for
-Vortex. It holds the tools, the harness, the docs and the hard-won knowledge —
-nothing here requires a patched or self-built Vortex.
+This repo is **doodlebot**, an agentic development and testing tool for Vortex. It holds the
+tools, the harness, the docs and the hard-won knowledge. Nothing here requires a patched or
+self-built Vortex.
 
 ## What's here
 
-| Path                       | What it is                                                                       |
-| -------------------------- | -------------------------------------------------------------------------------- |
-| `src/`                     | The Vortex extension: an MCP server exposing Vortex's state **and** its UI       |
-| `harness/`                 | `vortex-ai` CLI + Playwright suite — launching, caching, screenshots, hot reload |
-| `harness/AGENTS.md`        | **The operating manual.** Start here to actually use any of this                 |
-| `harness/PULL-REQUESTS.md` | Vortex PR titles, description template, reviewer brief, review lessons           |
-| `KNOWLEDGE.md`             | Non-obvious Vortex behaviours that fail silently. Read before debugging          |
-| `ARCHITECTURE.md`          | Why the extension reflects Vortex's API instead of wrapping it                   |
-| `.claude/skills/`          | Skills: working on Vortex, driving its UI, writing UI tests                      |
-| `.vortex-src/`             | The Vortex clone this suite manages (gitignored, created by `ai:source`)         |
+| Path                       | What it is                                                                 |
+| -------------------------- | -------------------------------------------------------------------------- |
+| `src/`                     | The Vortex extension: an MCP server exposing Vortex's state **and** its UI |
+| `harness/`                 | The `doodlebot` CLI and Playwright suite: launch, cache, drive, verify     |
+| `harness/AGENTS.md`        | **The operating manual.** Start here to use any of this                    |
+| `harness/WORKFLOWS.md`     | Bug fixes, features, designs, state matrices, orchestrating several agents |
+| `harness/PULL-REQUESTS.md` | Vortex PR titles, description template, agent briefs, review lessons       |
+| `KNOWLEDGE.md`             | Vortex behaviours that fail silently. Read before debugging                |
+| `ARCHITECTURE.md`          | Why the extension reflects Vortex's API instead of wrapping it             |
+| `.claude/skills/`          | Skills: developing Vortex, driving its UI, writing UI tests                |
+| `.vortex-src/`             | The Vortex clone this kit manages (gitignored, created by `ai:source`)     |
+| `.vortex-worktrees/`       | One worktree of it per piece of work (gitignored, `worktree add <name>`)   |
 
 ## Getting to a driveable Vortex
 
 ```bash
 pnpm install
-pnpm run build        # build the extension
-pnpm run ai -- doctor --installed --sandbox
-pnpm run ai -- setup --installed --sandbox  # no game or account required
-pnpm run ai -- tools --json                # live tool schemas for any agent
+pnpm run build                                # build the extension
+pnpm run ai -- setup --installed --sandbox    # no game or account required
+pnpm run ai -- tools --json                   # live tool schemas
 ```
 
-That drives your **installed** Vortex
-(<https://www.nexusmods.com/about/vortex/>).
+To work on Vortex's own code: `pnpm run ai:source` finds **your** GitHub fork, clones it into
+`.vortex-src` and builds it. Then `pnpm run ai -- worktree add <name>` makes a worktree of it for
+each piece of work. The kit never searches the filesystem for a Vortex checkout.
 
-To work on Vortex's own code instead:
-
-```bash
-pnpm run ai:source    # finds YOUR GitHub fork, clones it to .vortex-src, builds it
-pnpm run ai:up        # now drives that clone
-```
-
-`ai:source` looks your fork up on GitHub from the identity git already knows —
-no `gh auth login` needed — and stops with instructions if you do not have one
-yet. It clones **inside this repo**; the suite never searches the filesystem for
-a Vortex checkout, so there is exactly one source tree and it is gitignored.
-
-## Signing in (one manual step, once per machine)
-
-Local automation needs no account. Collections use OAuth, whose browser flow
-can require password, MFA or captcha input from the account owner during setup:
-
-```bash
-pnpm run ai -- setup --installed --oauth
-# ... complete Log in in Vortex and the browser; setup waits and caches it ...
-```
-
-Current OAuth credentials are cached privately, updated when Vortex refreshes
-them, and reused on cold and fresh starts. Revoked sessions may require repeating
-setup. `auth-status` returns presence booleans without secrets. See
-`harness/AGENTS.md` for details and recovery.
-
-A legacy API key can optionally be stored in gitignored `harness/.env`; it is
-not required for local tests and is not a substitute for collection OAuth.
-Use `pnpm run ai:test:nexus` for the live collection smoke test after setup.
+Collections need a Nexus login, once per machine: `pnpm run ai -- setup --installed --oauth`.
+The account owner completes the browser login; the kit caches and refreshes it. See
+`harness/AGENTS.md`.
 
 ## Verification
 
-`pnpm run ci` — typecheck (extension + harness), lint, format check, unit tests,
-build. This is the gate; it needs no Vortex.
+- `pnpm run ci` is the gate: types (extension and harness), lint, format check, unit tests,
+  build. It needs no Vortex.
+- `pnpm run ai:test` runs the Playwright suite against a real Vortex, with a disposable test
+  game and no account. It is outside `ci` because it needs Electron.
+- Say which one you ran. Passing unit tests alone is not evidence that a Vortex workflow works.
+- oxfmt and oxlint own formatting and lint. Don't hand-fix them.
 
-`pnpm run ai:test` runs the Playwright suite against a real Vortex. Deliberately
-outside `ci`: it needs Vortex and Electron startup. It supplies a disposable
-test game and needs no account. Say
-which one you ran.
+## Every automation request improves the kit
 
-Formatting and lint are owned by oxfmt and oxlint. Don't hand-fix them.
+When asked to perform or test something in Vortex:
+
+1. Read `harness/AGENTS.md` and the relevant skills. Read `KNOWLEDGE.md` before diagnosing a
+   failure, and `ARCHITECTURE.md` to decide where a missing capability belongs. When changing
+   Vortex, also follow its own `AGENTS.md`, `CLAUDE.md` and `docs/README.md`: this kit
+   supplements Vortex's rules and doesn't replace them.
+2. Inspect the live tool schemas, state and UI before acting. Use existing capabilities first.
+3. If the kit lacks a capability, implement it here: an extension tool, harness orchestration or
+   setup support. Keep it compatible with stock Vortex. Don't stop at describing the gap, or
+   leave a private workaround the next agent can't reuse.
+4. Verify it through the real app, add regression coverage, and update the manual, skill and
+   knowledge entries.
+5. Keep missing automation apart from external constraints. Login, captcha, unavailable
+   services and missing software can't be claimed away: report them with the exact setup step.
+
+A task is complete only when its result is verified, or a concrete external blocker is reported.
 
 ## Working on this repo
 
-### Every automation request improves the automation kit
-
-When someone asks an AI to perform or test something in Vortex:
-
-1. Read `harness/AGENTS.md`, review the available skills in `.claude/skills/`,
-   and apply the relevant ones. Read `KNOWLEDGE.md` before diagnosing a failure;
-   use `ARCHITECTURE.md` to choose where a missing capability belongs.
-   For Vortex application development, also read and follow its own
-   `.vortex-src/AGENTS.md`, `.vortex-src/CLAUDE.md` when present, and
-   `.vortex-src/docs/README.md`, then load the task-specific documentation they
-   reference. This harness supplements Vortex's AI guidance; it does not replace
-   its development, design, testing, or verification rules.
-2. Inspect the live tool schemas (`pnpm run ai -- tools --json`), state, and UI
-   before choosing actions. Use existing supported capabilities first.
-3. If the request cannot be completed because this kit lacks a capability,
-   **implement that capability here**, including extension tools, harness
-   orchestration, or setup support as appropriate. Keep compatibility with stock
-   Vortex. Do not stop at describing the gap or make a private, undocumented
-   workaround that the next agent cannot reuse.
-4. Verify the new path through the real app when available, add regression
-   coverage for the failure, and update the operating manual, relevant skill,
-   and knowledge entries so the next agent can do it without rediscovery.
-5. Distinguish missing automation from an external constraint. Account login,
-   captcha, unavailable services, and software the user must install cannot be
-   made successful by claiming otherwise. Put unavoidable interaction in initial
-   setup, preserve reusable authentication, and report any remaining limitation
-   with the exact setup step needed.
-
-The requested task is complete only when its result is verified, or when a
-concrete external blocker is clearly reported. Passing unit tests alone is not
-evidence that a Vortex workflow works end to end.
-
-Use [harness/WORKFLOWS.md](harness/WORKFLOWS.md) for bug reproduction, regression
-tests, new features, implementation from design documentation, and checks across
-window widths, heights, and application states.
-
-- **Several issues or PRs: orchestrate.** Give one fresh subagent each issue, each in its
-  own Vortex worktree and instance slot (`worktree add <name>`, `--worktree <name> --slot auto`),
-  so they can run Vortex in parallel. Reviews come from a separate agent. The orchestrating
-  session is the only one that edits this kit: subagents end their reports with "Kit lessons"
-  and the orchestrator folds them into the kit, KNOWLEDGE.md and the skills. See "Several issues
-  at once" in `harness/WORKFLOWS.md`.
-- **The extension must keep working against a stock, released Vortex.** That
-  constraint is the reason this design is worth anything. Anything needing the
+- **One orchestrator, many doodlebots.** The session the user talks to orchestrates. It gives
+  each issue to a fresh subagent with its own worktree and instance slot (`worktree add <name>`,
+  then `--owner <name> --worktree <name> --slot auto`), so they run Vortex in parallel. A
+  separate agent reviews each PR. **Only the orchestrator edits this kit.** Subagents end
+  their reports with **Kit lessons**, which the orchestrator turns into kit changes, tests and
+  docs. See `harness/WORKFLOWS.md`, "Several issues at once".
+- **The extension must keep working against a stock, released Vortex.** Anything that needs the
   main process goes in the harness over CDP, never into a patch to Vortex.
-- **Two test layers.** Pure DOM logic → `src/uiAutomation.test.ts` under jsdom.
-  Anything needing a real app → `harness/src/tests/`.
-- **Add to KNOWLEDGE.md** when you lose an hour to something non-obvious. Every
-  entry there cost real time; the file is the reason the next person doesn't
-  pay it again.
-- Extension changes hot-reload into a running instance: `pnpm run ai:watch`
-  alongside `pnpm run dev`.
+- **Two test layers.** Pure DOM logic goes in `src/uiAutomation.test.ts` under jsdom; anything
+  that needs a real app goes in `harness/src/tests/`.
+- **Add to KNOWLEDGE.md** when something non-obvious cost real time. Keep entries short:
+  symptom, cause, fix.
+- Extension changes hot-reload into a running instance: `pnpm run ai:watch` alongside
+  `pnpm run dev`.
 
 ## Committing
 
-Conventional Commits — `semantic-release` reads them to pick versions. Don't
-commit, push or open a PR unless asked.
+Conventional Commits. Don't commit, push or open a PR unless asked. Every Vortex PR description
+ends with the doodlebot footer (`harness/PULL-REQUESTS.md`).

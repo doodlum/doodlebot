@@ -108,7 +108,7 @@ Sandbox runs (`--sandbox`, `--bethesda-sandbox`) don't seed an API key, so local
 don't wait on Nexus lookups (the key is kept out of Vortex's environment too);
 `--with-api-key` if a test needs one. Running Vortex from a checkout locks that checkout for
 the run, so another agent's rebuild of it is refused. For a one-off script
-against the kit, `vortex-ai script <file.mts>` (see harness/AGENTS.md); `--owner` may come
+against the kit, `doodlebot script <file.mts>` (see harness/AGENTS.md); `--owner` may come
 before or after the file. A session's leases: `lease acquire --owner <you> --checkout <dir>`
 takes the instance and the checkout together, and `lease release --owner <you>` releases both.
 

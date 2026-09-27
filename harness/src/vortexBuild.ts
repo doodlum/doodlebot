@@ -1,5 +1,5 @@
 /**
- * `vortex-ai build --checkout <dir> [--production]`: build a Vortex checkout the way the kit's
+ * `doodlebot build --checkout <dir> [--production]`: build a Vortex checkout the way the kit's
  * A/B runs need it, without the three things agents kept getting wrong by hand.
  *
  *   - **The pinned pnpm.** Vortex pins its package manager (`packageManager`, pnpm 11) and this
@@ -151,7 +151,7 @@ export async function buildCheckout(options: BuildOptions): Promise<BuildReport>
   if (running !== undefined && running.length > 0) {
     throw new ConfigError(
       `A Vortex (pid ${running.join(", ")}) is running from ${dir}; it holds native modules open ` +
-        "and would be rebuilt underneath. Stop it first: `vortex-ai down` with its --owner and " +
+        "and would be rebuilt underneath. Stop it first: `doodlebot down` with its --owner and " +
         "cache flags.",
     );
   }

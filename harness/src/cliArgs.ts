@@ -1,5 +1,5 @@
 /**
- * The `vortex-ai` command line, parsed. Kept apart from cli.ts so the rules that agents keep
+ * The `doodlebot` command line, parsed. Kept apart from cli.ts so the rules that agents keep
  * tripping over (where `--owner` may go, what `--` means) have unit tests.
  */
 import { ConfigError } from "./config";

@@ -44,7 +44,7 @@ if (
     path.resolve(bethesdaSandboxPaths(config.cacheDir).documents).toLowerCase()
 ) {
   throw new Error(
-    "This check needs the fake Fallout 4: `vortex-ai up --dev-dir <checkout> --bethesda-sandbox`.",
+    "This check needs the fake Fallout 4: `doodlebot up --dev-dir <checkout> --bethesda-sandbox`.",
   );
 }
 

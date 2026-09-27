@@ -1,5 +1,5 @@
 /**
- * `vortex-ai eval`: run JavaScript in a harness Vortex's renderer over CDP, for diagnostics.
+ * `doodlebot eval`: run JavaScript in a harness Vortex's renderer over CDP, for diagnostics.
  *
  * For questions the MCP tools do not answer yet: a component's props, a computed style, what
  * a private object holds. It is a diagnostic, not a way to drive Vortex: anything a test or

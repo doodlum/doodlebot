@@ -160,7 +160,7 @@ export function assignSlot(owner: string, env: LeaseEnv = {}): number {
     if (chosen === undefined)
       throw new ConfigError(
         `All ${String(MAX_SLOTS - 1)} slots are running an instance for another owner. ` +
-          "See `vortex-ai lease status`; stop one with `down --owner <its owner> --slot <n>`.",
+          "See `doodlebot lease status`; stop one with `down --owner <its owner> --slot <n>`.",
       );
     // Taking over a slot another owner was given moves that owner on next time it asks.
     for (const [name, a] of Object.entries(file.assignments)) {

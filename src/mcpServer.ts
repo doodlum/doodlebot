@@ -1665,7 +1665,7 @@ function registerUiWriteTools(server: McpServer, api: IExtensionApi): void {
         "fail: an issue present at every width is usually a pre-existing quirk, while one that " +
         "appears only below a threshold is the actual responsive regression. Structure only: an " +
         "extension cannot screenshot (capturePage is main-process only), so for images at each " +
-        "size use the harness's `vortex-ai responsive --screenshots`, which captures over CDP.",
+        "size use the harness's `doodlebot responsive --screenshots`, which captures over CDP.",
       inputSchema: z.object({
         viewports: z
           .array(z.object({ width: z.number().int(), height: z.number().int() }))
@@ -1721,7 +1721,7 @@ function isTokenAuthorized(req: http.IncomingMessage): boolean {
 }
 
 function createToolServer(api: IExtensionApi): McpServer {
-  const server = new McpServer({ name: "vortex-mcp", version: "0.1.0" });
+  const server = new McpServer({ name: "doodlebot", version: "1.0.0" });
   registerReadTools(server, api);
   // Fail closed: writes (profile switch, mod enable/disable, deploy, purge, install,
   // game activation) are only ever registered — let alone reachable — when an operator
@@ -1734,7 +1734,7 @@ function createToolServer(api: IExtensionApi): McpServer {
 
 export function startMcpServer(api: IExtensionApi): http.Server {
   if (TOKEN === undefined)
-    log("warn", "[vortex-mcp] VORTEX_MCP_TOKEN not set — write tools disabled, read-only mode");
+    log("warn", "[doodlebot] VORTEX_MCP_TOKEN not set — write tools disabled, read-only mode");
 
   const validateHost = localhostHostValidation();
   const validateOrigin = localhostOriginValidation();
@@ -1768,7 +1768,7 @@ export function startMcpServer(api: IExtensionApi): http.Server {
       await server.connect(transport);
       await transport.handleRequest(req, res);
     } catch (err) {
-      log("error", "[vortex-mcp] request failed", {
+      log("error", "[doodlebot] request failed", {
         message: err instanceof Error ? err.message : String(err),
       });
       if (!res.headersSent) res.writeHead(500).end();
@@ -1778,12 +1778,12 @@ export function startMcpServer(api: IExtensionApi): http.Server {
 
   httpServer.on("error", (err: NodeJS.ErrnoException) => {
     if (err.code === "EADDRINUSE") {
-      log("warn", "[vortex-mcp] port already in use, assuming a prior instance is running", {
+      log("warn", "[doodlebot] port already in use, assuming a prior instance is running", {
         port: PORT,
       });
       return;
     }
-    log("error", "[vortex-mcp] HTTP server error", { message: err.message });
+    log("error", "[doodlebot] HTTP server error", { message: err.message });
   });
 
   // This server runs in the renderer, which Vortex itself can block for tens of seconds (a
@@ -1794,7 +1794,7 @@ export function startMcpServer(api: IExtensionApi): http.Server {
   httpServer.headersTimeout = KEEP_ALIVE_MS + 1_000;
 
   httpServer.listen(PORT, HOST, () => {
-    log("info", "[vortex-mcp] MCP server listening", { url: `http://${HOST}:${PORT}/mcp` });
+    log("info", "[doodlebot] MCP server listening", { url: `http://${HOST}:${PORT}/mcp` });
   });
 
   return httpServer;

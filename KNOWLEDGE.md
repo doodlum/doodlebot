@@ -1,1005 +1,519 @@
 # Vortex behaviours worth knowing
 
-### Transient zoom movement needs frame checks
+Non-obvious behaviours of Vortex and of this kit that fail silently, or with a message that
+points somewhere else. Read it before debugging something baffling.
 
-Settled bounds can pass even while chrome visibly jumps during a zoom gesture.
-Electron's native zoom updates can replay an older factor after React has already
-rendered compensation for a newer one. Modern zoom now uses CSS scaling and a
-shared CSS variable for the fixed chrome. `ai:test:zoom` samples every animation
-frame during rapid scaling, in addition to checking settled geometry.
-
-### A running source app can block verification
-
-Even without a dev watcher, the source app holds plugin DLLs such as `libloot.dll`
-open. Nx cache restoration reports only "Access is denied"; an uncached build
-reveals the locked file in `copy-extensions`. Stop the harness instance cleanly
-with `vortex-ai down` before the complete Vortex `verify` gate, then restart it.
-
-### Electron zoom and screenshot clipping
-
-At non-default `webFrame` zoom, Playwright's viewport screenshot can derive a
-CSS-pixel clip that crops the right and bottom of the actual Electron surface.
-This can falsely make title-bar buttons look off-screen. The harness now uses
-CDP `Page.captureScreenshot` without a clip and with `captureBeyondViewport: false`
-for viewport captures. Full-page captures retain Playwright's separate path.
-Check rendered bounds as well as screenshots when testing zoom.
-
-Things learned the hard way building and running this against a real Vortex.
-Every one of them fails _silently_, or with a message that points somewhere else.
-If you are debugging something baffling, start here.
+Each entry is symptom, cause, what to do. Add one when something non-obvious cost real time, and
+keep it timeless: no benchmark figures, run history or upstream PR status. Remove an entry when
+the code makes it obsolete. In parallel work only the orchestrator edits this file, from the
+"Kit lessons" in its subagents' reports (harness/WORKFLOWS.md).
 
 ## Extensions
 
-### Setup and automation regressions found in September 2026
+### Harness and extension invariants that broke once
 
-- A snapshot ref counter that resets to `e1` can make an old ref target a new
-  element. Refs now include a renderer lifetime and never reuse a counter within
-  it. Test rejection of old refs; testing only increasing snapshot generations
-  misses this bug.
-- A dialog watcher can invalidate a foreground snapshot before its click.
-  `withUiLock` serializes snapshot/action transactions within a harness client.
-  Separate clients still need their own coordination.
-- An MCP Protocol object owns one transport. Overlapping HTTP bodies must not
-  share that object. The delayed-body regression test verifies each response
-  still reaches its original client.
-- Plain-string UI name matching is exact and case-insensitive. Substring
-  matching `Games` also matched `Save games`; matching name plus text duplicated
-  labels and broke anchored regexes. Ambiguity must be an error.
-- `isLoggedIn` can be true with only an API key. OAuth presence is a separate
-  check; a snapshot marker alone never proves a usable login. The harness-only
-  credential file tracks refreshes and logout separately from game snapshots.
-  Existing credentials may omit the optional fingerprint field.
-- A no-game snapshot must have its own key and explicit marker. Treating
-  `(skipped)` as a filesystem path makes every no-game start cold.
-- Worker fixtures share an app. A lifecycle test using their ports can stop
-  the app underneath later tests. Give every additional app its own cache and
-  both its own MCP and CDP ports.
-- A fake Fallout executable does not isolate game-specific Documents or
-  LocalAppData writes. The normal suite registers `vortexaisandbox`; the opt-in
-  Nexus smoke test uses Stardew support, which installs this fixture into its
-  disposable game directory. Neither fixture proves a real game will launch.
-- Collection lookup must match both slug and revision; completion must match
-  the returned collection mod ID. Selecting the first collection can report
-  unrelated work as complete. Resolve historical revision IDs independently
-  from the latest revision number.
-- Nexus can return HTTP 504 for dependency lookup after successful earlier
-  runs. Vortex then shows dependency-error notifications with no active
-  downloads. Report those errors promptly and preserve the profile for retry;
-  repeating OAuth login does not fix a service outage.
-- Width-only report labels hide height-dependent failures. Record requested,
-  actual and inner dimensions, deduplicate issues within each viewport, and
-  keep constant findings visible: a defect at every size is still a defect.
-
-### An extension under an ESM package root never runs
-
-Node decides a `.js` file's module type from the **nearest `package.json` up the
-tree**. Copy an extension into a directory beneath a `"type": "module"` package
-and Node parses its CommonJS bundle as ESM: the module body never executes,
-`require()` returns an empty namespace object, **nothing throws**, and Vortex
-reports only:
-
-```
-corrupt extension, failed to initialize: {"name":"vortex-mcp",...}
-```
-
-which says nothing about module resolution. `installMcpExtension` writes
-`{"type":"commonjs"}` into the installed directory to pin it. A normal install
-under `%APPDATA%/vortex/plugins` has no ESM ancestor, so this only bites
-harnesses — which is why it is so confusing when it happens.
+- A ref counter that restarts at `e1` lets an old ref hit a new element. Refs carry a renderer
+  lifetime and never reuse a counter within it. Test that old refs are rejected.
+- A dialog watcher can invalidate a foreground snapshot before its click. `withUiLock` serialises
+  snapshot/action transactions within one client; separate clients need their own coordination.
+- An MCP Protocol object owns one transport. Overlapping HTTP requests sharing it send responses
+  to the wrong client.
+- Plain-string UI name matching is exact and case-insensitive, and ambiguity is an error.
+  Substring matching made `Games` match `Save games`.
+- A no-game snapshot needs its own key and marker, or every no-game start is cold.
+- Worker fixtures share one app; a lifecycle test on their ports stops it under later tests. Give
+  every extra app its own cache, MCP port and CDP port.
+- Collection lookup must match slug and revision, and completion the returned collection mod ID.
+  Taking the first collection reported unrelated work as complete.
+- Nexus can return HTTP 504 on dependency lookups: dependency-error notifications with no active
+  downloads. Report it and keep the profile; logging in again does not fix an outage.
+- Playwright can emit `window` while the renderer is still `about:blank`; watch navigation too, or
+  fixture setup times out. After a renderer reload wait for the title bar: extension loading can
+  outlast the default 5 s assertion timeout.
+- Width-only report labels hide height-dependent failures; record requested, actual and inner
+  dimensions. A fake game executable does not isolate a game's Documents or LocalAppData.
 
 ### Extensions are renderer-only
 
-`onceMain` is deprecated; `ExtensionManager` logs _"onceMain is deprecated and
-won't work as expected"_. Anything needing the main process —
-`webContents.capturePage`, `desktopCapturer`, `BrowserWindow` — is out of reach.
-Use CDP from outside instead (see `harness/src/cdp.ts`); it works against a
-released build and needs no change to Vortex.
+`onceMain` is deprecated ("won't work as expected"), so `webContents.capturePage`,
+`desktopCapturer` and `BrowserWindow` are out of reach. Use CDP from outside (`harness/src/cdp.ts`);
+it works against a released build.
 
-### The app-name directory differs between builds
+### Install paths that fail silently
 
-Vortex expects `<appData>/<appName>/startup.json` to exist before launch.
-`appName` is Electron's app name:
+- An extension under an ESM package root never runs. Vortex says only
+  `corrupt extension, failed to initialize: {"name":"doodlebot",...}`. Node takes a `.js` file's
+  module type from the nearest `package.json`, so under `"type": "module"` the CommonJS bundle
+  parses as ESM and never runs.
+  `installMcpExtension` writes `{"type":"commonjs"}` into the installed directory.
+- Vortex needs `<appData>/<appName>/startup.json` before launch: `Vortex` for a release,
+  `@vortex/main` for a source checkout. The wrong one quits with ENOENT on `startup.json`, which
+  reads like a corrupt profile.
+- `installMcpExtension` takes the _instance_ directory and appends `userData/plugins/<id>`.
+  Passing userData writes `userData/userData/...`, which Vortex never reads, so the old build keeps
+  running and changes seem to have no effect.
 
-- released build → `Vortex`
-- source checkout → `@vortex/main` (from `src/main/package.json`)
+### Verify tool schemas after reload; a responding port can still be the old server
 
-Create the wrong one and Vortex quits during startup with an unrecoverable
-ENOENT on `startup.json`, which reads like a corrupt profile.
+A reload can leave the old tool registration in place. A new parameter is then stripped by the old
+schema, and the new handler returns a normal result without it, which looks like the new code not
+loading. The harness waits for `automation_status.runtimeId` to change. After a schema change check
+`tools --json`, and if the schema is missing run `pnpm run ai -- down` then `up`. A successful
+request does not prove the rebuilt extension loaded.
 
 ## Accounts
 
 ### An API key logs you in, but not for collections
 
-`isLoggedIn` is `truthy(APIKey) || truthy(OAuthCredentials)`, so setting an API
-key satisfies every check the UI makes — the account shows as signed in, and the
-Log in button disappears.
+`isLoggedIn` is `truthy(APIKey) || truthy(OAuthCredentials)`, so an API key alone shows the account
+as signed in. Collection downloads use OAuth, and with only an API key they 401 minutes later
+with "You are not logged in to Nexus Mods!". Check `OAuthCredentials` specifically; a snapshot
+marker alone never proves a usable login. The API key also hides the fix: Vortex offers only
+Logout, which ends someone's session, so ask first. OAuth needs a captcha, so one interactive
+`setup --oauth` is unavoidable.
 
-Collection downloads are authenticated separately, with OAuth. With only an API
-key the download is dispatched and _then_ 401s, surfaced as _"You are not logged
-in to Nexus Mods!"_, long after everything said you were signed in. So a
-collection install must check for `OAuthCredentials` specifically; checking
-`isLoggedIn` passes and then fails minutes later.
+### The saved OAuth login lives outside the profile
 
-Two consequences worth planning around:
-
-- **The API key hides the way to fix it.** Because it satisfies `isLoggedIn`,
-  Vortex offers only Logout, and the OAuth flow is unreachable until you log
-  out — someone's account session, so ask before ending it.
-- **OAuth means a captcha**, which nothing can automate. One interactive login
-  is unavoidable.
+`src/authCache.ts` keeps OAuth credentials in a harness-only file that follows refresh-token
+rotation across `--fresh` and game switches. A real logout writes `null` there as a tombstone, so
+fresh starts stay logged out rather than resurrecting a snapshot's login. If every start is logged
+out, look for that tombstone and repeat `setup --oauth`.
 
 ### A source build's second launch logs you out
 
-`migrate()` in `util/migrate.ts` runs version-gated migrations against the
-_prior_ persisted `app.appVersion`. On a new profile that is `""`, and
-`semver.lt("", ...)` throws "Invalid Version": the log says "migration sequence
-failed" and nothing runs (harmless). That launch persists the build's version,
-and a source build reports `1.0.0` (the package.json pin). So the next launch
-runs `forceLogoutForOauth_1_9` (< 1.9.0), which clears the API key and OAuth
-credentials and sets `ForcedLogout`. Installed releases are unaffected; dev
-mode (`NODE_ENV=development`) skips migrations entirely.
+`migrate()` runs migrations against the prior `app.appVersion`. On a new profile that is `""`,
+`semver.lt` throws "Invalid Version" and nothing runs. That launch stores the source build's
+`1.0.0`, so the next runs `forceLogoutForOauth_1_9`, clearing the API key and OAuth and setting
+`ForcedLogout`. Releases and `NODE_ENV=development` are unaffected. The extension marks that
+migration complete in harness profiles (in `once`, before `migrate()`), and treats a clear followed
+by `SET_FORCED_LOGOUT(true)` in one dispatch run as automated, re-applying the cached credentials.
+A user's Log out and `refuseLogin` never set `ForcedLogout`, so they still tombstone.
 
-It cost a saved login: the OAuth cache saw the credentials vanish and wrote its
-logout tombstone. The extension now dispatches `COMPLETE_MIGRATION` for that id
-in harness profiles (during `once`, which precedes `migrate()`), and treats a
-clear followed by `SET_FORCED_LOGOUT(true)` in the same dispatch run as
-automated: it re-applies the cached credentials and resets the flag. A user's
-Log out and `refuseLogin` never set `ForcedLogout`, so they still tombstone.
+### A seeded API key makes every local install wait a minute
 
-### Keep the login by copying the directory, not the token
-
-The credential lives in the instance's working directory, so a reset loses it
-and the next collection install fails. `save-login` copies that directory over
-the snapshot, which cold starts are seeded from.
-
-Copying beats reading the token out of state and re-seeding it the way the API
-key is seeded: the credential stays opaque bytes, and there is no dependence on
-whatever shape Vortex stores tokens in. Stop Vortex cleanly first — it flushes
-state only on window close, and a snapshot taken around a half-written state
-database surfaces much later as apparent corruption.
-
-The marker records _that_ a login was captured, as a flag. Knowing the step was
-done is all the harness needs; inspecting the credential to find out would be
-handling a secret for no reason.
+With an API key Vortex looks each local archive up on Nexus, and for a fixture archive that ends
+only at its 60 s timeout, so every sandbox install looks hung. Sandbox runs leave the key out of
+the profile and drop `VORTEX_AI_NEXUS_API_KEY` and `NEXUS_API_KEY` from Vortex's environment
+unless `--with-api-key` is given. Both are needed: `harness/.env` puts the key in the harness's own
+environment, which Vortex inherits.
 
 ## Isolation
 
 ### `VORTEX_E2E=1` is load-bearing, and hostile to discovery
 
-`ELECTRON_USERDATA` / `ELECTRON_APPDATA` are **only honoured when it is set**, and
-it also skips the single-instance lock so a harness instance can run alongside
-the operator's own Vortex. The released build honours all three, which is what
-makes isolated automation against a stock install possible.
-
-The cost: it also disables startup quick discovery and suppresses the
-`discover-game` event, so the Games page will never list a game on its own.
-Register the path yourself with a raw `type:ADD_DISCOVERED_GAME` dispatch —
-faster than a scan and deterministic across machines anyway.
+`ELECTRON_USERDATA` / `ELECTRON_APPDATA` are honoured only when it is set, and it skips the
+single-instance lock, so a harness instance runs beside the user's Vortex (releases honour all
+three). It also disables quick discovery and `discover-game`, so the Games page never lists a
+game by itself. Register the path with a raw `type:ADD_DISCOVERED_GAME` dispatch.
 
 ## Building Vortex from here
 
-### Electron window events can precede navigation
+### A running app holds native modules open
 
-Playwright can emit `window` while the main renderer still has an `about:blank`
-URL. Checking only that event for `index.html` misses a fully working Vortex and
-times out in fixture setup. Watch navigation on candidate windows too. After a
-renderer reload, wait for the title bar before asserting state: extension loading
-can outlast the default five-second assertion timeout.
+A running source Vortex keeps plugin DLLs such as `libloot.dll` open, watcher or not. An nx cache
+restore then reports only "Access is denied"; an uncached build names the file in
+`copy-extensions`. Run `pnpm run ai -- down` before Vortex's `verify` gate or a rebuild.
 
 ### A nested package-manager run inherits the wrong pnpm
 
-`pnpm exec` exports a pile of `npm_*` / `PNPM_*` environment variables, and they
-pin any child process to the **parent** project's package manager — regardless
-of the child's own `packageManager` field or working directory. Running Vortex's
-`pnpm install` from a script that this repo's pnpm launched therefore used
-pnpm 9 instead of the 11 Vortex requires, and failed with:
+`pnpm exec` exports `npm_*` / `PNPM_*` variables that pin child processes to the parent's pnpm,
+whatever the child's `packageManager`. Vortex's `pnpm install` run from this repo used pnpm 9 and
+failed with:
 
 ```
 WARN  Ignoring broken lockfile ... expected a single document in the stream
 ERR_PNPM_SPEC_NOT_SUPPORTED_BY_ANY_RESOLVER  node@runtime:24.17.0
 ```
 
-Neither message mentions a version mismatch. The lockfile is fine; pnpm 9 just
-cannot read one pnpm 11 wrote, and does not understand `node@runtime:` specs.
-`childEnv()` in `harness/src/source.ts` strips those variables. The source setup
-also reads Vortex's exact `packageManager` version: it uses `pnpm` directly only
-when that version matches, otherwise it runs the pinned version through
-`pnpm dlx`.
-This prevents a newer global pnpm from silently deciding to replace an existing
-dependency layout in a non-interactive session.
+Neither names a version; pnpm 9 just cannot read pnpm 11's lockfile. `childEnv()` in
+`harness/src/source.ts` strips the variables, and source setup runs Vortex's exact
+`packageManager` version (`pnpm` if it matches, else `pnpm dlx` or `VORTEX_AI_PNPM`), so a newer
+global pnpm can't silently replace the dependency layout either.
+
+### A cached Vortex build starts, then fails at the first install
+
+`start-install` fails with `Cannot find module '…\src\main\build\hash-worker.cjs'`. nx restored
+`@vortex/main:build` from cache, which restores only declared outputs, and `src/main/project.json`
+lists `bsdiff-worker.cjs` but not `hash-worker.cjs`, which `build.mjs` also bundles. The kit checks
+every `bundleWorker(…, "<name>")` output after a build (`missingBuildOutputs`), runs
+`node build.mjs` when one is missing, and `up` refuses such a checkout. The real fix is Vortex's
+`project.json` outputs.
+
+### `--production` needs a production bundle, and is checked
+
+Vortex's bundlers inline `NODE_ENV` at build time, and nx caches both modes. A plain
+`pnpm run build` makes a development bundle, whose "switch to production" branches are dead code,
+so `--production` on it used to load development React. `up --production` now fails unless the
+renderer reports production NODE_ENV, react and react-dom (`automation_status.react`), and warns
+when `src/main/build/renderer.js` is a development bundle. For release parity build with
+`pnpm run ai -- build --checkout <dir> --production`, which sets NODE_ENV for the build only; one
+left in the shell silently makes later builds production. Distrust any timing whose
+`automation_status.nodeEnv` was not `"production"`.
 
 ### `vi.resetModules()` trips `@vortex/shared`'s duplicate-module guard
 
-`src/shared/src/errors/base.ts` registers its `VortexError` class on
-`globalThis[Symbol.for("vortex.errors.VortexError")]` and throws "Duplicate @vortex/shared error
-module detected in this process" when a second copy of the module loads with a different class.
-A renderer test that calls `vi.resetModules()` and then `await import(...)` loads it again, so it
-throws at import, which reads like a broken test setup. Test a module's fresh state some other
-way (an exported reset, or a bound set by argument), or delete that global symbol before
-re-importing, and say so in the test.
+`src/shared/src/errors/base.ts` registers `VortexError` on a `globalThis` symbol and throws
+"Duplicate @vortex/shared error module detected in this process" when a second copy loads, so
+`vi.resetModules()` then `await import(...)` throws at import like broken setup. Test fresh state
+another way (an exported reset, a bound argument), or delete
+`globalThis[Symbol.for("vortex.errors.VortexError")]` first and say so in the test.
 
 ### Capturing output makes a slow step look like a hang
 
-`pnpm install` in a Vortex checkout downloads an Electron binary and rebuilds six
-native modules — many minutes of steady output. Captured rather than streamed,
-it is indistinguishable from a wedged process, and gets killed as one. Long steps
-stream; only short, quiet commands capture.
+`pnpm install` in a Vortex checkout runs for many minutes; captured, it looks wedged and gets
+killed. Long steps stream. Likewise a check piped through `Select-String` or `Select -Last` shows
+nothing until it exits: tee to a file, or watch the game directory and `list_notifications`.
+
+### Getting code into Vortex's main process
+
+- `--inspect-brk` hangs every install: workers inherit break-on-start and Vortex hashes archives
+  in one, while the renderer looks healthy. Stripping `process.execArgv` does not help.
+- `inspector.close()` from the attached session deadlocks main (0% CPU, no logging).
+- A `--require` preload's `require("electron")` resolves to the npm package's path string. Hook
+  `Module._load` and act on the app's own first `require("electron")`, as `mainPreload.ts` does.
+- In NODE_OPTIONS quoted backslashes are escapes; use forward slashes.
+
+Packaged Vortex ignores NODE_OPTIONS, so this works only on source builds. The harness checks the
+preload's record and kills the instance within 5 s otherwise; `automation_status.paths` shows what
+Vortex resolved.
+
+### Vortex's E2E suite cannot give a local baseline as-is
+
+Stock `packages/e2e` fails locally: account specs at once ("Missing required environment variable
+E2E_NEXUS_FREE_USER_USERNAME"), and most others in fixture setup with "Vortex process exited
+unexpectedly with code 0 before the main window appeared" after a 6-minute timeout, a startup race
+in `packages/e2e/src/fixtures/vortex-app.ts`. Upstream CI runs E2E only for `packages/e2e` changes
+or on schedule, so for most PRs the local run is the only E2E gate. Use
+`pnpm run ai:vortex-e2e -- --checkout <dir>` (harness/AGENTS.md, "Vortex's own E2E suite"): it
+applies `harness/patches/e2e-window-startup.patch` for the run, restores the file byte for byte,
+and leaves out account specs without credentials by reading each describe's
+`test.use({ nexusUser })` and tier title (files mix tiers). Don't run bare `playwright test`.
 
 ## Games and profiles
 
 ### `activate-game` is a dead end for a game with no profile
 
-Its handler calls `activateGame`, which on finding no profile shows a "Choose
-profile" dialog whose choice list is **empty** — unanswerable, so activation
-hangs forever. It also takes **no callback**, so `vortex_dispatch`'s
-`__CALLBACK__` sentinel waits on something that never fires.
-
-`manageGameDiscovered` — which creates the first profile _and_ initialises and
-tags the staging directory — is not exposed through `registerAPI`; only
-`unmanageGame` is. The working route is the UI: Games page → search → hover the
-tile → the manage button.
-
-### The manage button's label and shape move between versions
-
-- Vortex 2.6.3: `button.action-manage`, labelled **"Manage"**, inside a
-  `.hover-content` wrapper at `opacity: 0`.
-- Newer layouts: labelled **"Add game"**.
-
-Match on the class where possible and treat the label as a fallback.
-
-## The UI
-
-### A hidden Electron window does not paint like a visible one
-
-The upstream E2E suite defaults to `VORTEX_E2E_HEADLESS=1` and `--disable-gpu`.
-A local headed pass is not a CI pass. In the zoom regression, a hidden window
-produced only three animation frames in 2.2 seconds, and Headless UI's exit
-transition remained mounted after the three-second timer had fired. Both failures
-reproduced locally with `CI=1` and `VORTEX_E2E_HEADED` unset. Setting
-`webContents.setBackgroundThrottling(false)` did not help; Vortex already uses it.
-
-Tests that assert animation frames must render their own window:
-`const window = await vortexApp.browserWindow(vortexWindow);`
-`await window.evaluate(window => window.showInactive());`
-This retains the normal CI launch and GPU settings without taking keyboard focus.
-Keep the frame-count, geometry and timer assertions; do not lower them to make
-hidden-window throttling pass. Other tests can keep their windows hidden.
-
-CI also runs account tests without secrets on fork PRs, and its encrypted report
-step prompts and exits 255 when the password is empty. Separate these failures
-from UI regressions. A test step marked successful with `continue-on-error` does
-not mean its tests passed; read the Playwright summary in the log. The harness's
-`pr-checks` command correlates PR checks with workflow job steps and calls this
-out as a post-processing failure when the actual test step succeeded.
-
-### Synthetic hover cannot trigger CSS `:hover`
-
-Dispatching `mouseover`/`mouseenter` runs React handlers but does **not** change
-the browser's hover state. Anything revealed purely by a CSS `:hover` rule stays
-at `opacity: 0`, and a snapshot correctly reports it hidden — which looks like a
-snapshot bug and is not.
-
-Either click it anyway (`ui_click` with `requireActionable: false`, since the
-event is dispatched on the element rather than at a coordinate), or use the
-harness's `realHover()`, which moves a real mouse over CDP.
-
-### Three ways a snapshot can silently go blank
-
-All three were real bugs in this extension, each of which deleted part or all of
-the UI from `ui_snapshot` rather than failing:
-
-1. **`display: contents` wrappers** generate no box, so `getClientRects()` is
-   empty while their children render normally. Pruning on that removed Vortex's
-   entire game grid. Zero client rects now only disqualifies an element from
-   being _clicked_.
-2. **`getComputedStyle().opacity` can be `""`**, and `Number("") === 0`, so a
-   naive zero-check reads an unresolved value as fully transparent. Only a value
-   that actually parses to 0 counts.
-3. **`aria-hidden` on the app root.** react-bootstrap sets it on Vortex's
-   `#content` and `#overlays` whenever a modal opens, so treating it as invisible
-   blanked the entire snapshot at exactly the moment an agent most needs one.
-   It means "hidden from assistive technology", not "not rendered" — it is
-   reported per node as `ariaHidden` instead.
-
-### A button's accessible name is not its text
-
-`ui_snapshot` reports accessible names, and Vortex's buttons routinely carry an
-`aria-label` or `title` that differs from what they render. The External Changes
-dialog's confirm button reads **Confirm** in devtools and is named **Confirm
-changes**; its cancel button reads Cancel and is named "Cancel deployment".
-
-So a selector written by inspecting the DOM can match nothing while looking
-obviously correct — and a dialog policy that matches nothing is silent: the
-modal stays open, blocks whatever raised it, and reads as a hang. That cost
-three attempts on one dialog here.
-
-Write policies against the name `ui_snapshot` reports, not the text devtools
-shows, and prefer a prefix (`/^confirm/`) over an anchored exact match. Icon
-buttons are the same story from the other side: their text is empty and the name
-comes entirely from the attribute, so a text-based DOM query misses them.
-
-### Several widgets listen on `mousedown`, not `click`
-
-`HTMLElement.click()` dispatches only a `click` event, so dropdown toggles and
-table row selection never respond to it. Dispatch the full pointer/mouse
-sequence — which `ui_click` does.
-
-### React ignores a direct `.value` assignment
-
-React tracks the last value it wrote on the DOM node. Assigning `el.value`
-updates the DOM but leaves the tracker stale, so React swallows the synthetic
-`input` event and `onChange` never runs — the classic "typed into the box but
-nothing happened". Call the prototype's native setter first, as `ui_fill` does.
-
-### Stacked modals: `:nth-of-type()` cannot select between them
-
-Vortex mounts each modal under its own parent, so two open dialogs are not
-siblings. Every `div:nth-of-type(n)` therefore matches _both_, `querySelector`
-keeps returning the first, and the second dialog is unaddressable by CSS alone.
-
-The failure is silent and misleading. A purge prompt stacked behind a collection
-report went unanswered for the whole run: the policy matched its text fine, but
-the scoped lookup kept landing in the wrong dialog, so it read as "no policy for
-this dialog" — while the unanswered modal blocked the install driver, which read
-as a hung collection.
-
-`ui_snapshot` takes an `index` alongside `selector` for this: the nth _match_,
-which is the thing CSS cannot express. Note that `[role="dialog"]` can match
-several nested elements of a single dialog, so indices are not one-per-dialog —
-confirm with the dialog's text before acting, as `clickInsideDialog` does.
-
-### A dialog's text is not its snapshot tree's text
-
-`clickInsideDialog` used to confirm a scoped snapshot was the right dialog by looking for the
-first 20 characters of its `activeDialogs` text (the container's `textContent`) in the tree's
-names and texts. On the conflict editor that never matched: the tree names the filter box by
-its placeholder ("Search for a rule..."), which is not text, so "Multiple" and "Conflict A 0000"
-were never adjacent in it. No container matched, nothing was clicked, and the function returned
-undefined, which a one-shot caller never checked; Save simply did not happen. A scoped
-`ui_snapshot` now returns `rootText`, built exactly as the `activeDialogs` entry is, and that is
-what is compared. `clickInsideDialog` throws (listing each container and its buttons) when it
-clicks nothing, and when the element `ui_click` reports clicking is not the button it found.
-Pollers pass `{ required: false }`.
-
-### A dialog's text runs its buttons together and stops at 400 characters
-
-`activeDialogs` (and `ui_active_dialogs`) report each modal's `textContent`, cut at 400
-characters. Two consequences, both silent:
-
-- Buttons' labels have no space between them: the collection Install Now dialog ends
-  "…LaterInstall Now", so `/\binstall now\b/` never matches (no word boundary between "r" and
-  "I"). `classifyDialog` tagged that dialog with no step until September 2026.
-- The buttons come last, so a dialog with a long description loses them: a review screen's text
-  never contains "Install optional mods", and `installOfflineCollection`'s optionals modes, which
-  looked for it there, closed the review with No Thanks instead. Match a dialog by its heading
-  (it comes first: "<game> collection added", "Collection installation complete"), and ask for
-  its buttons (`dialogButtons`, or a scoped `ui_snapshot`).
-
-A disabled button is not an absent one: the review's buttons are disabled while it postprocesses
-(its deploy), and `clickInsideDialog` only finds enabled ones, so a single failed click proves
-nothing.
-
-### A full snapshot misses the modal on a big Mods page
-
-`ui_snapshot` stops at its node limit, and a modal is rendered at the end of the DOM. With a
-few hundred mods on the (fully rendered) 2.7 Mods page, the Install Now dialog was open with its
-buttons, but `waitForNode({ name: "Install Now" })` timed out listing only the title bar's and
-sidebar's buttons. Find dialogs with `ui_active_dialogs` and click inside them with
-`clickInsideDialog` (scoped snapshots), as `offlineCollection.ts` now does.
-
-### The modern layout keeps notifications in a popover, with zero-width spaces
-
-The 2.7 modern layout renders no `.notification` toasts: a notification's actions (a collection's
-"Resume") exist only in the Headless UI popover the title bar's Notifications button opens, and
-its entries have no stable class; a snapshot scoped to `.nxm-popover-panel` returns them as
-flat siblings (title, message, buttons). Names are rendered with zero-width spaces between their
-words ("Kit\u200bVerify"), so `text.includes(name)` fails unless they are stripped first.
-`resumeViaNotification` handles both layouts (`buttonInEntry`).
-
-### Disabling one mod gives every Mods-page row a new object
-
-Master 031b81d38, production build, 400 mods, measured with `measureRowIdentity`: disabling one
-mod made two `calculatedValues` commits, the first giving all 400 rows a new object because
-every row's `loadOrder` column changed, and 401 TableRows re-rendered. The page still showed
-the change in about 0.75 s with a 150 ms longest task at that size. Not investigated; it is the
-per-row cost to look at when disabling one mod is slow on a large library.
-
-### A mod exists in state before it is installed
-
-A mod row appears the moment its install _starts_, not when it finishes. Until
-the installer completes it sits at `state: "installing"`, shows its archive
-filename rather than its real name, and stays disabled. For a mod with a FOMOD,
-"until the installer completes" means until someone answers the wizard.
-
-So counting mods counts installs that have merely begun. A collection reported
-8/8 complete while four members were still installing, deploy ran over the
-half-installed set, and the game launched with a wizard still open on screen.
-The archive-named disabled rows are the tell, and they look like a cosmetic
-quirk rather than the signal they are.
-
-Wait on `state === "installed"`, **and** on nothing being left in `installing`.
-Neither alone is enough: the count can be reached while later members are still
-going, and "nothing installing" is briefly true in the gap before the next one
-starts. Anything that writes to the game directory should refuse while mods are
-installing, because deploying then links a half-extracted set and the result
-reads as a broken collection rather than an unfinished one.
-
-### FOMOD steps do not have a predictably-named forward button
-
-Vortex labels a FOMOD installer's forward action after the step it is showing,
-so a single collection puts up `Next`, `Install`, `Finish`, `Default Settings`,
-`Installation`, `Readme and information` and
-`Basic - name reordering for weapon/apparel - Language` across consecutive mods.
-
-Matching on the label therefore handles a few mods and then sits forever on one
-it does not recognise. Nothing errors: the install driver is simply waiting on a
-modal, so it reads as a hung collection. This stalled the harness at 8 of 12
-mods.
-
-Match on **position** instead: `#fomod-installer-dialog .fomod-nav-buttons`
-holds Back (when there is a previous step), a progress bar, and the forward
-action last. Cancel is not in that bar — it is `#fomod-cancel` in the dialog
-header — so the forward action is just the bar's last button. `advanceFomod()`
-does this.
-
-Two things that look like details and are not:
-
-- **Scope to the nav bar, never to the dialog or the page.** "Click the last
-  button in the dialog" generalises the rule and breaks it: on "Purge files from
-  different instance?" the last button is _Purge_, against a real game install.
-  A page-wide search is worse still — Vortex's titlebar has a button called
-  `Close`, so answering a dialog's `Close` by name finds the window control and
-  shuts the app down mid-install. Both have happened here.
-- **Do not skip disabled buttons before taking the last one.** A step can render
-  with its forward button briefly greyed out; filtering disabled entries first
-  makes the rule fall through to _Back_ and walk the wizard backwards forever.
-  Take the last button as it is, and if it is disabled, do nothing and re-poll.
-
-### The 2.7 Mods page renders every row, and that is the large-list slowdown
-
-On stock 2.7.0 (and 2.8-beta/master as of September 2026) the modern Mods page
-passes `stickyHeader` to SuperTable. That sets `.table-main-pane { overflow: visible }`
-so the page scrolls the table instead, but each row's `VisibilityProxy` still roots its
-IntersectionObserver at that pane. A root that doesn't clip counts its whole box as
-visible, so every row renders in full: 3,000 of 3,000 with 21 on screen. Nothing errors.
-It shows up only as slowness proportional to the mod count, which users reported as
-"deploy is 6× slower than 2.6", "clearing the filter takes 10–30 s" and "freezes during
-a collection install". Every dispatch (per-mod deploy progress, install steps) now
-re-runs thousands of rows' connected cells. The Mods page also stays mounted while
-hidden (`invisible`, not unmounted), so it slows other pages too, Plugins included.
-
-Measured in **production** builds (`--production`), 4,000 mods, unpatched against patched
-master (Nexus-Mods/Vortex#24281), 3 runs a side, with `ai:test:large-library` and the probes now
-in `ai:test:mods-scroll`:
-
-- rows rendered in full, with 21 on screen: 4,000 → 27;
-- clearing the name filter blocked the UI for 14.2–19.3 s → 0.31–0.50 s;
-- deploy: 28.9–31.7 s → 15.2–16.9 s on the Mods page, and 28.5–32.3 s → 15.2–16.9 s from
-  Settings. The Mods page was **not** slower than Settings: the hidden Mods page stays mounted,
-  so the fix halves deploy on every page;
-- 20 sequential installs: 43.6–55.4 s → 32.8–33.5 s (longest task 450–709 ms → 359–375 ms);
-- a 40-tick wheel flick: longest task 434–533 ms → 134–146 ms.
-
-Earlier figures here (deploy 63 → 31 s, installs 221 → 33 s, rows 3,000 → 24, filter clear
-11.0 → 0.37 s) came from development builds, whose React is several times slower at rendering.
-Don't quote them. A single run of the stock 2.7.0 installer took 403 s to deploy from the Mods
-page against 38 s from Settings (10.7×, like the reported 12 min against 2 min). Production
-builds of master did not reproduce a Mods-against-Settings difference, so compare against the
-classic layout instead (`ai:test:large-library` does).
-
-The classic layout, whose pane scrolls itself, was never affected; use it as the
-in-build control. The fix roots the observer at the element that actually scrolls
-(`scrollContainerOf`). It lives on the Vortex branch `fix/sticky-table-virtualisation`.
-
-### A sticky-header table's scroll-to did nothing
-
-Same root as above: with `stickyHeader`, SuperTable's `.table-main-pane` doesn't scroll, the
-page around it does. `scrollToItem` still set the pane's `scrollTop` from the row's
-`offsetTop`, which moves nothing and throws nothing. So on 2.7 every `mods-scroll-to` (the
-Plugins page's Mod column link, health-check "show mod", a collection's mod link) opened the
-Mods page at the top, and Page Up/Down sized its jump from the pane's full height. It looks like
-the 200 ms `show-main-page` timeout losing a race, but it isn't one. The fix (Vortex branch
-`fix/plugins-mod-link-scroll`) scrolls `mScrollContainer`, or `document.scrollingElement` when
-only the window scrolls, and measures the row against it with `getBoundingClientRect`.
-`pnpm run ai:test:plugins-mod-link` reproduces it on the fake Fallout 4. The Plugins table hides
-its Mod column by default, so that check turns the column on (`setAttributeVisible`).
-
-Two things that make that check pass on a broken build. First, the classic layout
-(`setUseModernLayout(false)`) has no sticky header, so master scrolls correctly there. The
-layout setting survives `up`'s reset start, so check `settings.window.useModernLayout` (the
-check reports it as `layout`). Second, the 200 ms wait in `PluginList.highlightMod` looks like
-a race but never lost in tests. The modern layout opens Mods at startup, so that page is always
-mounted. The classic one starts on Dashboard, and a cold click still scrolled with 3,000 mods in
-a production build.
-
-Traps found while measuring:
-
-- A deploy timing is worthless unless the purge before it removed the fixture's files.
-  Otherwise the next "deploy" is incremental and fast. Installing a mod triggers
-  Vortex's auto-deploy, which races a purge started right after and leaves files
-  behind, so the check turns auto-deploy off for its run.
-- Never delete fixture files a purge left behind while `vortex.deployment.json` still
-  lists them. (Copies no manifest lists, left by an interrupted run, are invisible to
-  Vortex and the check removes those.) Vortex still owns listed files, so the next
-  deploy stops on External Changes, "Links were deleted". Every row there defaults to
-  **Save change (delete file)**, which deletes the mods' _staging_ files. The
-  harness's Confirm policy would have accepted that for 3,000 mods; only the
-  snapshot's node limit hid the footer button. The policy now refuses whenever links
-  were deleted, and reports the dialog instead. Answer it in Vortex, with
-  **Revert all changes** to restore the links.
-- A long check piped through `Select-String` or `Select -Last` shows nothing until it
-  exits, so a hang looks like a slow run. Tee to a file, or watch progress through the
-  game directory and `list_notifications`.
-- tsx compiles every file with esbuild's `keepNames`, hard-coded (no option turns it off), so
-  a named inner function becomes `__name(fn, "name")`, a helper the page does not have, and
-  `page.evaluate(fn)` throws "`__name` is not defined". `attachToRenderer` now defines the
-  helper in the page (`NAME_SHIM`, `cdp.ts`); kit modules still send source text.
-
-### A row stays rendered forever once it has been on screen
-
-`VisibilityProxy` ignores a "not visible" callback that arrives within 1 s of the row becoming
-visible (the `now - this.mVisibleTime > 1000` guard). An IntersectionObserver reports only
-changes, so for a row scrolled past quickly it never reports again, and the row stays rendered
-in full. Scrolling therefore undoes the virtualisation a bit at a time. Nothing errors.
-
-Production build with the sticky-header fix (#24281), 4,000 mods, after one wheel scroll through
-the list: 1,109 rows rendered, clearing the filter blocked 4.95 s again, and scrolling was
-blocked for 122 s of the 131 s it took. The classic layout, never affected by the sticky header,
-does worse: 2,175 rows, 7.8 s to clear the filter. Forty wheel ticks alone leave 417 rows
-rendered, so "it drops back to about 36" is not true either. Present in 2.6 through master of
-September 2026. `ai:test:mods-scroll` reports it as a warning, and fails on it with
-`--max-accumulated <n>`.
-
-### After a completed collection, Vortex stops running its checks
-
-`InstallDriver.startInstall` suppresses the `plugins-changed`, `mod-installed`,
-`mod-activated` and `settings-changed` checks while a collection installs, and only cancel
-or pause released them. A successful install ends through the review screen's Done/Close,
-which did not. So Missing Masters, and every other check on those events, never ran again
-until restart. Nothing is logged: the test runner drops suppressed events without a trace.
-
-This is present in 2.6 through master of September 2026, and fixed by
-Nexus-Mods/Vortex#24282. It is reproduced by `ai:test:bethesda`, and visible with
-`check_probe_counts`, whose `plugins-changed` count stops rising.
-
-### A Bethesda collection without a plugin list skips the end of its postprocessing
-
-For a gamebryo game, postprocessing calls the collection parser, which reads
-`collection.plugins.find(…)` for every plugin its members installed
-(`util/gameSupport/gamebryo.tsx`, around line 212). Vortex's exporter always writes that list.
-A hand-made collection.json without it makes the parser throw. The error is swallowed, so plugin
-enabling and `collection-postprocess-complete` are skipped. The review's Done still enables and
-the install looks complete. `offlineCollection.ts` writes the list, and `installOfflineCollection`
-reports `postprocessed` from the event.
-
-### A collection installed from a file has no revision
-
-`start-install <archive>` installs the collection mod with `archiveId: null`. The install driver
-reads revision id, slug and `revisionInfo` (including `gameVersions`) from that download's
-`modInfo`, so with no download the game-version prompt and anything revision-based can't be
-reached. Nothing says so. Register the archive as a download first (`addLocalDownload`, then
-`start-install-download`), which is what Vortex does itself for a downloaded collection.
-`addOfflineCollection` does this. With `nexus.revisionInfo.modFiles` present on the download, the
-driver takes `revisionInfo` from it instead of asking Nexus.
-
-### The collection InstallDriver is not reachable from an extension
-
-The driver is a module variable of the collections extension. `registerAPI` exposes only
-`getActiveCollectionInstallSession` (the same object as `state.session.collections.activeSession`),
-not its `step`. The step alone decides which dialog shows, and `start` auto-continues on the next
-driver update, so a test can't tell "waiting at Install Now" from "about to begin" by state.
-Vortex does pass the driver as the `driver` prop to its always-mounted collection dialogs, and
-`collection_install_state` reads it from React's fiber tree. That is a private shape. The tool
-says `found: false` when a build stops passing the prop.
-
-### A seeded API key makes every local install wait a minute
-
-With an API key, Vortex looks locally installed archives up on Nexus. For a fixture archive QA
-saw that lookup end only at its 60 s timeout, so each sandbox install took a minute longer and
-looked hung, with nothing in the UI. `up` used to seed `harness/.env`'s key into
-sandbox profiles. Sandbox runs now leave it out unless `--with-api-key` is given.
-
-Leaving it out of the profile was not enough: `harness/.env` loads the key into the harness's
-own environment, and Vortex was launched with a copy of it, so `VORTEX_AI_NEXUS_API_KEY` was in
-Vortex's `process.env` in every sandbox run. The launch environment now drops it (and
-`NEXUS_API_KEY`) whenever the key is not in use.
-
-### Measuring a slow Vortex without measuring the harness
-
-Three things made measurements wrong, found while profiling 2,000-member collections:
-
-- **The observer was the hotspot.** The dialog watcher and the collection driver polled a
-  full `ui_snapshot` every second. Each measures every rendered element, and with a big mod
-  list that made `getBoundingClientRect` the top entry in the profile. Poll with
-  `ui_active_dialogs` instead.
-- **"fetch failed: ECONNRESET" meant the renderer was frozen, not broken.** The MCP server
-  lives in the renderer. Node's 5s keep-alive timeout fired late after a long freeze and
-  closed a socket as the client reused it. The server now keeps idle sockets for 10 minutes,
-  and pollers retry.
-- **Development React.** Source builds run React's development build unless started with
-  `--production`, so rendering-heavy timings are inflated there. And `--production` itself
-  gave development React on a plain `pnpm run build` until September 2026; see the next entry.
-
-### `--production` on a development bundle ran development React
-
-Vortex's bundlers inline `process.env.NODE_ENV` at build time (rolldown `define` for main,
-webpack for the renderer, `rolldown.base.mjs`), and nx caches the two modes separately
-(`{ "env": "NODE_ENV" }` is a build input). A plain `pnpm run build` has no NODE_ENV, so it
-makes a development bundle, in which:
-
-- main.cjs's "switch to production unless development" (`main.ts`, `setEnv("NODE_ENV",
-"production", true)`) compiles to `if (false)`;
-- renderer.tsx's "set `process.env.NODE_ENV` to production" branch is dead code too.
-
-The kit's `--production` used to delete NODE_ENV from the launch environment and rely on
-main to set it. On a development bundle nothing did: the renderer ran with no NODE_ENV, and
-React, required at run time rather than bundled, loaded `react.development.js` and
-`react-dom.development.js`. `automation_status.nodeEnv` was null and nothing checked it. On a
-bundle built with NODE_ENV=production the renderer sets it itself, so the same kit gave
-production React on one build of a checkout and development React on the next. That is why
-QA of #24281 and #24282 saw "production" every run and QA of #24283 (after a plain rebuild of
-the same checkout) saw null. It was never a kit regression: `instance.ts` has done this since
-`--production` was added in 4da873d.
-
-Now `--production` launches with NODE_ENV=production, and `up` asks the renderer which React
-files it loaded (`automation_status.react`, from the module cache). It stops Vortex and fails
-unless NODE_ENV is production and both react and react-dom are production builds. It also
-warns when `src/main/build/renderer.js` is a development bundle: React is then production, but
-Vortex's own development branches still run (main-process file logging, renderer source maps
-and process-warning traces, missing-icon checks). For full release parity build with
-`pnpm run ai -- build --checkout <dir> --production`, which sets NODE_ENV for the build's own
-environment only. Setting it in the shell and clearing it afterwards is what agents got wrong:
-the agent sandbox refuses `Remove-Item Env:NODE_ENV` (use `$env:NODE_ENV=$null`), and a
-NODE_ENV left behind made later builds production without anyone asking.
-
-Which numbers to distrust: any `--production` timing whose `automation_status.nodeEnv` was not
-"production". The #24281 figures above (production every run) and #24283 round-2 QA (a
-NODE_OPTIONS preload forced production) stand. The #24283 round-1 A/B (collection-scale with
-2,000 members: 158.5 → 99.7 s wall, longest freeze 24.0 → 7.8 s, updateRules 8.3 s → 0.19 s)
-loaded `react.development.js` and is development-React. The collection profiles under "What the
-profiles showed" date from the same session and have no React check; treat their proportions
-as development-React ones. With production React, master's longest freeze for 2,000 required
-members was 21.2 s (round-2 QA, 3 runs).
-
-What the profiles showed, for next time:
-
-- **Collections.** `minimatch` recompiling each member's fileExpression for every installed
-  mod took 36% of CPU. `ADD_MOD_RULE` compared every rule with `_.isEqual` per add (25s for
-  2,000 rules). `updateRules` ran a linear scan per member (Nexus-Mods/Vortex#24283).
-- **The Plugins page.** Toggling a plugin renumbers every row, and SuperTable copied its
-  whole value cache per changed row (Nexus-Mods/Vortex#24284). Clearing the filter (about
-  1.2s) is spread across React, react-select's AutosizeInput and `nameMatch`, with no single
-  hotspot.
-- **Downloads.** Progress and speed dispatch once a second each, both into the persisted
-  `persistent.downloads` hive: 94 persist:diff per minute with four downloads (LAZ-1168). No
-  slow writes or long tasks reproduced without a real collection's database load.
-
-### Getting code into Vortex's main process
-
-Packaged and source builds need different routes to redirect Documents, and three
-obvious ways fail silently:
-
-- **`--inspect-brk` hangs every install.** The released build honours it, but Node worker
-  threads inherit break-on-start. Vortex hashes archives in a worker, so every install
-  waits forever. There is no log line, and the renderer and MCP server look healthy.
-  Stripping `process.execArgv` does not help: workers copy the parent's _parsed_ options.
-- **`inspector.close()` from the session that is still attached deadlocks main.** It
-  blocks until no session is connected. Main then sits at 0% CPU and stops logging.
-- **A `--require` preload cannot use `require("electron")` directly.** The built-in module
-  does not exist yet, so it resolves to the npm package's path string. Hook `Module._load`
-  and act on the app's own first `require("electron")`, as `mainPreload.ts` does.
-- **Paths in NODE_OPTIONS:** quoted backslashes are escapes, so use forward slashes.
-
-Packaged Vortex (2.7.0) ignores NODE_OPTIONS, so this only works on source builds. The
-harness verifies a record the preload writes and kills the instance within 5s otherwise,
-before a game can activate. `automation_status.paths` reports what Vortex actually resolved.
+It opens a "Choose profile" dialog with an empty list and takes no callback, so it and
+`vortex_dispatch`'s `__CALLBACK__` hang forever. `manageGameDiscovered` is not in `registerAPI`.
+Use the UI: Games page → search → hover the tile → the manage button. Its label moves between
+versions (2.6.x: `button.action-manage`, "Manage", in a `.hover-content` wrapper at `opacity: 0`;
+newer: "Add game" or "Manual add"), so match the class first and the label as a fallback.
 
 ### A reset profile does not reset the game directory
 
-`--fresh`, cold and rebuild starts replace Vortex's profile, staging included. The game
-folder kept the previous run's deployed files and `vortex.deployment.json`. The next deploy
-then stops on External Changes, "Source files were deleted", and purges leave strays.
-Bootstrap now empties a disposable game's `Data` (keeping `Fallout4.esm`) and its plugin
-lists whenever the working profile is reset. It only touches games inside the cache.
+`--fresh`, cold and rebuild starts replace profile and staging, but the game folder keeps the last
+run's files and `vortex.deployment.json`, so the next deploy stops on External Changes, "Source
+files were deleted". Bootstrap empties a disposable game's `Data` (keeping `Fallout4.esm`) and
+plugin lists on reset, only for games inside the cache.
 
-In the External Changes dialog, "Source files were deleted" → Save removes deployed copies
-of files whose source is already gone. "Links were deleted" → Save deletes the **staging**
-files. The harness confirms the first and refuses the second.
+## The UI
 
-### Registered dialogs are always mounted
+### Three ways a snapshot can silently go blank
 
-A dialog registered with `registerDialog` is rendered by `DialogContainer` for the whole
-session. Its `show` prop only hides the Modal. So its hooks and selectors run on every
-matching store change even while nobody can see it. A `useMemo` over `persistent.mods` in
-`InstallFinishedDialog` cost 42–49 s of a collection install on a hidden dialog (with
-#24283 applied; 125–139 s on master), from `findModByRef` per optional member on each skip
-dispatch. When profiling a freeze, check whether hidden dialogs are doing the work, and gate
-expensive derived state on the dialog's own show condition.
+Each deleted part or all of the UI from `ui_snapshot` rather than failing:
+
+1. **`display: contents` wrappers** have no box, so `getClientRects()` is empty while children
+   render; pruning on it removed the game grid. Zero rects only disqualify _clicking_.
+2. **`getComputedStyle().opacity` can be `""`**, and `Number("") === 0`. Only a value that parses
+   to 0 is transparent.
+3. **`aria-hidden` on the app root.** react-bootstrap sets it on `#content` and `#overlays` while
+   a modal is open. It is reported per node as `ariaHidden`, never treated as unrendered.
+
+Also: a hover-revealed button's computed opacity can be `1` while its parent strip is still fading
+in. Wait for the parent's transition before a scoped snapshot.
+
+### Modals and footers fall past the snapshot's node limit
+
+`ui_snapshot` stops at its node limit and modals render at the end of the DOM. On a big Mods page
+`waitForNode({ name: "Install Now" })` timed out with the dialog open, and a large External
+Changes dialog lost its footer buttons. Find dialogs with `ui_active_dialogs` and click inside
+them with `clickInsideDialog` (scoped snapshots).
+
+### Synthetic hover cannot trigger CSS `:hover`
+
+`mouseover`/`mouseenter` run React handlers but not `:hover`, so hover-revealed controls stay at
+`opacity: 0` and the snapshot correctly calls them hidden. Click anyway (`ui_click` with
+`requireActionable: false`), or use `realHover()`, a real mouse over CDP. Likewise
+`HTMLElement.click()` sends only `click`, while dropdown toggles and row selection listen on
+`mousedown` (`ui_click` sends the full sequence), and after `el.value = …` React swallows the
+`input` event (`ui_fill` calls the prototype's native setter first).
+
+### A button's accessible name is not its text
+
+Snapshots report accessible names, and `aria-label`/`title` often differ from the text: External
+Changes' Confirm is named "Confirm changes", its Cancel "Cancel deployment". A policy written from
+devtools text matches nothing, the modal stays open and it reads as a hang. Match snapshot names,
+prefer a prefix (`/^confirm/`); icon buttons have no text at all.
+
+### Stacked modals: `:nth-of-type()` cannot select between them
+
+Each modal mounts under its own parent, so `div:nth-of-type(n)` matches both and `querySelector`
+returns the first. An unanswered purge prompt behind a collection report read as a hung install.
+Pass `index` with `selector` to `ui_snapshot` for the nth match; `[role="dialog"]` can match
+several elements of one dialog, so confirm by its text, as `clickInsideDialog` does.
+
+### A dialog's text is not its snapshot tree's text
+
+The tree names inputs by placeholder, so a dialog's `textContent` need not appear in it, and
+matching on it made `clickInsideDialog` click nothing quietly. Compare a scoped snapshot's
+`rootText`, built like the `activeDialogs` entry. `clickInsideDialog` throws when it clicks nothing
+or the wrong element; pollers pass `{ required: false }`.
+
+### A dialog's text runs its buttons together and stops at 400 characters
+
+`activeDialogs` and `ui_active_dialogs` give `textContent` cut at 400 characters. Button labels
+run together ("…LaterInstall Now", so `/\binstall now\b/` fails), and come last, so a long
+description drops them. Match a dialog by its heading ("<game> collection added", "Collection
+installation complete") and read buttons with `dialogButtons` or a scoped snapshot. Buttons can
+also be disabled while a review postprocesses, and `clickInsideDialog` finds only enabled ones, so
+one failed click proves nothing.
+
+### The modern layout keeps notifications in a popover, with zero-width spaces
+
+There are no `.notification` toasts; actions such as a collection's "Resume" exist only in the
+popover the title bar's Notifications button opens, as flat siblings under `.nxm-popover-panel`
+with no stable class. Names contain zero-width spaces ("Kit\u200bVerify"); strip them before
+comparing. `resumeViaNotification` handles both layouts.
 
 ### Virtualised rows are not in the DOM
 
-Vortex's mod, plugin and game lists are windowed: a row simply does not exist
-until the list is narrowed or scrolled to it (except the 2.7 Mods page — see above,
-where every row renders until the sticky-header fix lands). Filter with the search box rather
-than scrolling — far more reliable. And scrolling needs a real `scroll` **event**,
-not just a `scrollTop` assignment, or the new rows never mount.
+Mod, plugin and game rows do not exist until filtered or scrolled to (except the modern Mods page
+without the sticky-header fix, below). Filter with the search box rather than scrolling; a scroll
+needs a real `scroll` event, not just `scrollTop`, or new rows never mount.
 
-### Verify tool schemas after reload; a responding port can still be the old server
+### The modern Mods page renders every row, and that is the large-list slowdown
 
-Older reload paths could leave the previous MCP server listening. A handler
-appeared updated while its tool registration still had the old input schema.
+The modern Mods page passes `stickyHeader` to SuperTable, setting `.table-main-pane
+{ overflow: visible }` so the page scrolls, but each row's `VisibilityProxy` still roots its
+IntersectionObserver at that pane. A non-clipping root sees every row as visible, so all render.
+Nothing errors: deploys, filter clears and collection installs just slow with mod count. The page
+stays mounted while hidden, so every page is slow, Settings and Plugins included. The classic
+layout is unaffected; use it as the in-build control (`ai:test:large-library`). The fix roots the
+observer at the element that scrolls (`scrollContainerOf`). `ai:test:mods-scroll` reports rows
+rendered against rows on screen. Time only `--production` builds.
 
-The result is a half-updated extension that is easy to misread. A new parameter
-is rejected by the old schema and silently stripped before the handler sees it,
-so the handler runs the new code with the argument missing and returns a
-perfectly normal result. Nothing errors. It looks exactly like the new code not
-being loaded — and led to a "verified against the live app" claim here that was
-really the old schema discarding the argument.
+### A sticky-header table's scroll-to did nothing
 
-The current harness waits for `automation_status.runtimeId` to change, and real
-tests verify the new renderer rejects old refs. After a schema change, also
-inspect `tools --json`. If the new schema is missing, perform a full
-`vortex-ai down` / `vortex-ai up` cycle; a successful request alone is not proof
-that the rebuilt extension loaded.
+Same root: `scrollToItem` set the non-scrolling pane's `scrollTop` from the row's `offsetTop`,
+which does nothing and throws nothing. Every `mods-scroll-to` (Plugins' Mod column link,
+health-check "show mod", a collection's mod link) opened Mods at the top, and Page Up/Down sized
+jumps from the pane's height. It looks like the 200 ms `show-main-page` timeout losing a race; it
+isn't. The fix scrolls `mScrollContainer` (or `document.scrollingElement`) and measures with
+`getBoundingClientRect`. `pnpm run ai:test:plugins-mod-link` reproduces it, but passes on a broken
+build in the classic layout, which survives `up`'s reset: check its reported `layout`.
 
-### Installing the extension: `installMcpExtension` appends `userData` itself
+### A row stays rendered forever once it has been on screen
 
-It takes the _instance_ directory and joins `userData/plugins/<id>` onto it.
-Passing the userData directory produces `userData/userData/plugins/...`, which
-Vortex never reads — so the extension keeps running the previously installed
-build and every change appears to have no effect.
+`VisibilityProxy` ignores "not visible" within 1 s of becoming visible
+(`now - this.mVisibleTime > 1000`), and IntersectionObserver reports only changes, so a row
+scrolled past quickly stays rendered. Scrolling undoes virtualisation bit by bit, in both layouts
+and with the sticky-header fix. `ai:test:mods-scroll` warns, and fails with
+`--max-accumulated <n>`.
+
+### Measuring a slow Vortex without measuring the harness
+
+- Polling a full `ui_snapshot` measures every element, and `getBoundingClientRect` tops the
+  profile. Poll with `ui_active_dialogs`.
+- "fetch failed: ECONNRESET" means the renderer froze: the MCP server lives there, and a late
+  keep-alive timeout closed a reused socket. Idle sockets now live 10 minutes and pollers retry.
+- Development React inflates rendering timings; see "`--production` needs a production bundle".
+- Registered dialogs are always mounted: `DialogContainer` renders every `registerDialog` dialog
+  all session and `show` only hides the Modal, so their hooks run on store changes while
+  invisible (a `useMemo` over `persistent.mods` in `InstallFinishedDialog` slowed collection
+  installs). Check hidden dialogs, and gate expensive state on the dialog's show condition.
+- Open leads: disabling one mod changes every row's `loadOrder`, so every Mods row re-renders
+  (`measureRowIdentity`); download progress and speed each dispatch once a second into the
+  persisted `persistent.downloads`.
+
+### A hidden Electron window does not paint like a visible one
+
+Vortex's E2E suite defaults to `VORTEX_E2E_HEADLESS=1` and `--disable-gpu`, so a headed pass is not
+a CI pass: a hidden window gives few animation frames, and Headless UI exit transitions can outlive
+their timers. `setBackgroundThrottling(false)` doesn't help. Reproduce with `CI=1` and
+`VORTEX_E2E_HEADED` unset. Animation tests show their window without focus
+(`await (await vortexApp.browserWindow(vortexWindow)).evaluate(w => w.showInactive())`) and keep
+their frame, geometry and timer assertions. On fork PRs, CI's encrypted report step exits 255
+without secrets, and a green `continue-on-error` step doesn't mean its tests passed: read the
+Playwright summary (`pr-checks` flags this as a post-processing failure).
+
+### Zoom: check frames and real bounds, not settled screenshots
+
+Settled bounds can pass while chrome jumps mid-zoom: Electron's native zoom can replay an older
+factor after React compensated for a newer one. Modern zoom uses CSS scaling and a shared CSS
+variable, and `ai:test:zoom` samples every frame of rapid scaling. At non-default zoom Playwright's
+viewport screenshot crops right and bottom, so title-bar buttons look off-screen; the harness uses
+CDP `Page.captureScreenshot` without a clip. Check rendered bounds too.
+
+### Split panes and panel content
+
+- Content mounts through stable portals to keep page state. The split view doesn't track panel
+  focus; don't add pointer or focus listeners to the frame to change the sidebar page.
+- A hidden panel makes legacy SuperTable measure zero-width proxy columns, and its header debounce
+  flashes collapsed columns on return. Keep the last valid widths; observe the proxy row's size.
+- React can batch a split's collapsed and expanded states into one paint: `transitionDuration`
+  says 150ms but the pane jumps. Hold the collapsed state one painted frame, and assert
+  intermediate widths. Sidebar width checks likewise wait for the final width.
+- The 20–80% ratio alone doesn't keep the two-pane minimum. Clamp drag and keyboard ratios to the
+  measured width and refit a saved ratio when the window narrows.
+- A minimum-width pane can be narrower than a sticky toolbar (gamebryo Plugins hid its counters);
+  `.mainpage-header` in split panes scrolls. Test by scrolling it to the end.
+
+### A mod exists in state before it is installed
+
+A mod appears when its install _starts_, at `state: "installing"`, disabled and named after its
+archive, until the installer (or a FOMOD wizard) finishes. Counting mods then reports 8/8 while
+members still install, and deploy links a half-installed set. Wait for `state === "installed"`
+**and** nothing `installing`; "nothing installing" is briefly true between members. Refuse to
+write to the game directory while mods install.
+
+### FOMOD steps do not have a predictably-named forward button
+
+The forward button is named after the step (`Next`, `Install`, `Finish`, `Readme and information`,
+…), so label matching stalls silently on an unknown one. Take the last button of
+`#fomod-installer-dialog .fomod-nav-buttons` (Back, progress bar, forward; Cancel is
+`#fomod-cancel`), as `advanceFomod()` does. Scope to the nav bar: the last button of "Purge files
+from different instance?" is _Purge_, and a page-wide `Close` is the window control. Don't filter
+out disabled buttons first, or you walk Back forever; if the last is disabled, re-poll.
+
+### Compare a large-library deploy against the classic layout, not another page
+
+The modern Mods page stays mounted while hidden, so a deploy started from Settings pays the same
+rendering cost as one from the Mods page. A Mods-against-Settings ratio stays near 1 on a broken
+build and a fixed one alike. The classic layout's table always virtualised, so it is the in-build
+baseline (`ai:test:large-library` compares against it).
+
+### Bundled optional collection members can stall the install
+
+Installing an offline collection's optional members, bundled in the archive, has stalled until
+Vortex's stall watchdog fired (5 minutes). The cause isn't known. `installOfflineCollection`
+skips optional members by default; `optionals: "stand-in"` exercises the review around an
+optionals pass without installing them. A test that needs real optional installs should expect
+the stall and say so.
+
+### After a completed collection, Vortex stops running its checks
+
+`InstallDriver.startInstall` suppresses `plugins-changed`, `mod-installed`, `mod-activated` and
+`settings-changed` checks during a collection install, and only cancel or pause released them, not
+the review's Done/Close. Missing Masters and the rest never run again until restart, with nothing
+logged. `ai:test:bethesda` reproduces it; `check_probe_counts` shows `plugins-changed` stop rising.
+
+### A Bethesda collection without a plugin list skips the end of its postprocessing
+
+The gamebryo parser reads `collection.plugins.find(…)` for each installed plugin
+(`util/gameSupport/gamebryo.tsx`). A hand-made collection.json without the list throws, the error
+is swallowed, and plugin enabling and `collection-postprocess-complete` are skipped while the
+install looks complete. `offlineCollection.ts` writes the list; `installOfflineCollection` reports
+`postprocessed` from the event.
+
+### A collection installed from a file has no revision
+
+`start-install <archive>` uses `archiveId: null`, and the driver reads revision, slug and
+`revisionInfo` (with `gameVersions`) from the download, so the game-version prompt silently never
+happens. Register a download first (`addLocalDownload`, then `start-install-download`), as
+`addOfflineCollection` does; `nexus.revisionInfo.modFiles` on it replaces the Nexus lookup.
+
+### The collection InstallDriver is not reachable from an extension
+
+`registerAPI` exposes only `getActiveCollectionInstallSession`, not the driver's `step`, so state
+can't tell "waiting at Install Now" from "about to begin". `collection_install_state` reads the
+`driver` prop of Vortex's always-mounted collection dialogs from React's fiber tree, a private
+shape; it says `found: false` when a build stops passing it.
 
 ## Deployment
 
 ### A cleared primary tool is `null`, not absent
 
-Clearing a game's primary tool writes `null` rather than removing the key, so an
-`!== undefined` check treats it as a tool named "null" and refuses to launch.
-Callers that mean "just run the game" have to clear it _and_ the reader has to
-treat `null` and `""` as unset.
+Clearing a primary tool writes `null`, which an `!== undefined` check launches as a tool named
+"null"; treat `null` and `""` as unset. A restored snapshot's tool path may be gone, or its binary
+stale, spawning and exiting having started nothing. `runExecutable` resolving means only that a
+process started, and a working loader exits too. Watch for the **game's** process and fall back to
+launching it directly, as `launchGame` does (`processWaitMs` for tests).
 
-Worth knowing too: a seeded profile carries its recorded tools with it, so an
-instance restored from a snapshot can have a primary tool that no longer works.
-Two different failures look identical from the outside:
+### Deploy prompts whose default destroys files
 
-- the recorded path is **gone**, or
-- the path still exists but the binary is **stale** — a backup F4SE built for
-  another game version, for instance — so it spawns cleanly and exits having
-  started nothing.
-
-Either way `runExecutable` resolves, which only means the process was _started_,
-never that it stayed up or that a game appeared. Nor is the tool's own process
-the thing to watch: a loader is _supposed_ to exit once it has handed off, so a
-working loader and a dead one both leave nothing behind.
-
-Watch for the **game's** executable in the OS process list instead, and fall
-back to launching it directly when it never shows up. That is what `launchGame`
-does; `processWaitMs` exists so tests need not wait it out.
-
-### Deploying over another instance's files is blocked
-
-Vortex prompts _"Purge files from different instance?"_. Answer Cancel
-unattended: a real install can have tens of thousands of deployed files (31,102
-on the machine this was built on), and purging is the direction Vortex itself
-calls "less reliable". Use a disposable game directory to exercise deploy/purge.
+"Purge files from different instance?": answer Cancel unattended. A real install has tens of
+thousands of deployed files, and Vortex calls that purge direction less reliable. Use a disposable
+game directory. In External Changes, "Source files were deleted" → Save removes deployed copies whose source is gone; the harness
+confirms it. "Links were deleted" → every row defaults to **Save change (delete file)**, which
+deletes the mods' _staging_ files; the harness refuses and reports it. Answer with **Revert all
+changes**. Never delete files a purge left while `vortex.deployment.json` lists them (unlisted
+copies are safe). A deploy timing needs the prior purge to have removed the files, and install
+auto-deploy races a purge, so timing checks turn auto-deploy off.
 
 ## Shutdown
 
 ### Kill the process and you can corrupt the profile
 
-Vortex flushes pending state diffs only on a proper window close: the renderer
-writes them synchronously, then main waits for it to release its file handles. A
-hard kill skips that and can leave the state database half-written — which shows
-up much later as a stale or corrupt profile rather than as an error at the time.
-`vortex_quit` closes the window, which is the same path as clicking the X.
-
-### Windows holds file handles after exit
-
-The state database releases its handles a moment _after_ the process is gone, so
-an immediate `rmSync` loses the race with EPERM. Retry with backoff.
-
-Directory **renames** are worse: they can fail with EPERM for reasons unrelated
-to Vortex (an indexer or scanner holding a transient handle on any descendant),
-and retrying does not reliably help. Prefer building in place and writing a
-marker file last over the staging-directory-then-rename pattern.
+Vortex flushes state only on a proper window close; a hard kill can half-write the state database,
+which shows up much later as a stale or corrupt profile. `vortex_quit` and `pnpm run ai -- down`
+close the window. Stop cleanly before copying a profile. Even then Windows releases the database's
+handles just after exit, so an immediate `rmSync` hits EPERM: retry with backoff. Directory renames
+can hit EPERM from indexers however often you retry, so build in place and write a marker last.
 
 ## Leases
 
-### Running Vortex from a checkout did not lock the checkout
+### Slots and worktrees: what is still shared
 
-The instance lease stopped two agents driving Vortex at once, but a launch with `--dev-dir X`
-took only `instance`. So one agent could hold `instance` and run Vortex from `C:\dev\vx-ab`
-while another held `checkout:c:/dev/vx-ab` and rebuilt it underneath, and neither was refused.
-A launch from a source build now takes (or joins) `checkout:<dir>` as well, records its Vortex
-on both leases, and keeps both until that Vortex exits. Scripts and `ai:test:*` checks that
-drive a running instance take the checkout it was launched from (`<cache>/instance.json`), not
-the one their own configuration would pick. Releasing an explicit checkout lease while a
-Vortex still runs from it leaves the lease held by that Vortex; before, the release deleted
-the file outright and the checkout was free again.
+The instance lease is per cache (`instance:<cache dir>`, bare `instance` for the default), and
+`--slot <n|auto>` gives each owner its own cache, artifacts and ports. Still shared:
 
-### A second instance was refused even with its own cache and ports
-
-Before slots, the instance lease was one machine-wide key, `instance`, whatever `--cache-dir` and
-ports a command used. So the documented "another independent instance" flags still refused a
-second owner. Two Vortex processes do coexist when their `userData` and ports differ: tested with
-a source build, two sandboxes up at once, each answering its own MCP port with its own profile.
-The lease is now per cache (`instance:<cache dir>`, bare `instance` for the default cache, so older
-leases still count), and slots (`--slot auto`) hand each owner a cache and ports.
-
-What still is shared, and why the orchestrator keeps it:
-
-- **One Vortex checkout per running Vortex.** Two slots launched from the same checkout conflict
-  on its lock (and on its `src/main/build`), so give each agent a worktree.
-- **The kit's own files.** Two agents appending to KNOWLEDGE.md or a skill overwrite each other,
-  so subagents report "Kit lessons" and only the orchestrator edits the kit.
-- **OAuth.** A new slot copies slot 0's saved login once. After that the copies diverge; if Nexus
-  rotates refresh tokens, a slot whose copy went stale needs `login-import --slot <n> --force`.
+- **The checkout.** A `--dev-dir` or `--worktree` launch also takes (or joins) `checkout:<dir>`
+  and holds it until that Vortex exits, even if you release it. Checks driving a running instance
+  take the checkout it was launched from (`<cache>/instance.json`), not their own flags'. Two slots
+  from one checkout conflict, so give each agent a worktree (`worktree add <name>`).
+- **The kit's files.** Parallel edits overwrite each other, so subagents report "Kit lessons" and
+  only the orchestrator edits the kit.
+- **OAuth copies diverge between slots.** A new slot copies slot 0's login once, then refreshes its
+  own. If Nexus rotates refresh tokens, a stale slot needs `login-import --slot <n> --force`.
 - **CPU.** Timings taken while another slot builds or runs Vortex measure the other agent.
 
 ## Tooling on Windows
 
-### `git commit -F -` fails with a PowerShell here-string
-
-In Windows PowerShell 5.1, piping a here-string into `git commit -F -` fails with "did not match
-any file(s)", so it looks like a pathspec error. Write the message to a file and pass
-`git commit -F <file>`.
-
-### `git show … | Set-Content` corrupts source files
-
-In Windows PowerShell 5.1, piping `git show <sha>:<path>` into `Set-Content` or `Out-File`
-re-encodes the content and changes its line endings. Vitest may then report "no tests" for the
-file, or the revert looks like a real change. To restore a file from another commit, use
-`git restore --source=<sha> --worktree -- <path>`.
-
-### A commit message file written by PowerShell starts with a BOM
-
-Windows PowerShell 5.1's `Set-Content -Encoding utf8` and `Out-File -Encoding utf8` write a
-byte-order mark, and `git commit -F <file>` keeps it as the first bytes of the subject. Use
-`[IO.File]::WriteAllText($path, $msg)`, which writes UTF-8 without a BOM.
-
-### JSON saved from PowerShell starts with a BOM too
-
-The same byte-order mark breaks JSON read back by Node: `JSON.parse` fails with "Unexpected
-token", so a `vortex-e2e --compare` baseline or a `call --args-file` saved with `Out-File
--Encoding utf8` or `Set-Content -Encoding utf8` looks corrupt. Every JSON file the kit reads back
-goes through `readJsonFile` in `harness/src/jsonFile.ts`, which strips the mark. Write new readers
-the same way.
-
-### A scratch script outside the repo can't import the kit by path
-
-Two separate failures. tsx treats a `.ts` file with no ESM `package.json` above it as CommonJS,
-so top-level `await` fails; name it `.mts`. And on Windows an absolute path in an import,
-`C:\dev\…`, is parsed as a URL with scheme `c:`; use `file:///C:/dev/…`. Bare names such as
-`fflate` still don't resolve from outside the repo. `vortex-ai script <file.mts>` runs it with the
-kit's tsx and passes the URL of `harness/src/kit.ts`, which re-exports what scripts need, in
-`VORTEX_AI_KIT`.
-
-### A PowerShell array of one pair flattens
-
-`@(@("a", "b"))` is `@("a", "b")`, not an array holding one pair: the outer `@()` unrolls its
-single element. A list of find/replace pairs with one entry is then iterated item by item, and
-each "pair" is one string, so `$pair[0]` and `$pair[1]` are its first two characters. Rewriting
-cross-references in six PR bodies this way replaced `#` with a digit and `b` with `r` and
-corrupted three of them. Write the one-pair case as `@(,@("a", "b"))`, or do text transforms in
-Python, and lint the result after any bulk edit.
-
-### The agent sandbox refuses `Remove-Item Env:`
-
-`Remove-Item Env:NODE_ENV` is blocked there. `$env:NODE_ENV=$null` removes the variable. Better
-not to set it in the shell at all: `vortex-ai build --production` sets it for the build only.
-
 ### No `pnpm`, or only Node 20, on the agent's PATH
 
-A fresh agent shell can have Node 20 and no `pnpm` at all. `corepack pnpm` then fails signature
-verification, and pnpm 11 (Vortex's `packageManager`) needs Node ≥ 22.13 (`node:sqlite`). The
-kit's pinned pnpm runs as `npx -y pnpm@9.15.0 run ai -- …`. For Vortex, put a portable Node 22
-on a roomy drive with `npm install node@22 --prefix J:\tools\node22`, install
-`pnpm@11.10.0` globally into the same prefix, and prepend
-`J:\tools\node22\node_modules\node\bin;J:\tools\node22` to `PATH` for each command. When
-`vortex-ai build` falls back to `pnpm dlx pnpm@<version>` and that fails with ENOENT in
-`pnpm-cache\dlx` (seen with C: nearly full), run the checkout's own build with pnpm 11 and
-`$env:NODE_ENV='production'` in that one command. Then put back `etc/vortex.api.md` and
-`etc/Dependency Report.md` yourself, because only the kit's `build` does that.
-Or set `VORTEX_AI_PNPM` to that pnpm (`J:	ools
-ode22pnpm.cmd` here): `source`, `worktree add`
-and `build` then use it instead of `pnpm dlx`.
+A fresh shell can have Node 20 and no `pnpm`; `corepack pnpm` fails signature verification, and
+pnpm 11 (Vortex's) needs Node ≥ 22.13 (`node:sqlite`). Run the kit as
+`npx -y pnpm@9.15.0 run ai -- …`. For Vortex, `npm install node@22 --prefix J:\tools\node22` on a
+roomy drive, install `pnpm@11.10.0` globally into that prefix, prepend
+`J:\tools\node22\node_modules\node\bin;J:\tools\node22` to `PATH`, and set `VORTEX_AI_PNPM` to
+`J:\tools\node22\pnpm.cmd`. `source`, `worktree add` and `build` then skip `pnpm dlx`, which can
+fail with ENOENT in `pnpm-cache\dlx` on a nearly full C:. A hand-run build must restore
+`etc/vortex.api.md` and `etc/Dependency Report.md` itself; only the kit's `build` does.
 
-### A cached Vortex build started, then failed at the first install
+### PowerShell's UTF-8 writes start with a BOM
 
-`Cannot find module '…srcmainuildhash-worker.cjs'` from `start-install`. The worktree was
-built with `nx run @vortex/main:build`, and nx restored that target from its cache. A cache hit
-restores only the outputs the target declares. `src/main/project.json` lists `bsdiff-worker.cjs`
-but not `hash-worker.cjs`, which `src/main/build.mjs` also bundles (upstream master, September 2026).
-So the build looks complete, Vortex starts, and the first install fails. Any checkout whose main
-build was a cache hit has this. The kit now checks every `bundleWorker(…, "<name>")` in
-`build.mjs` after a build (`missingBuildOutputs`), runs `node build.mjs` when one is missing, and
-`up` refuses a checkout that lacks one. The real fix belongs in Vortex's `project.json` outputs.
+PowerShell 5.1's `Set-Content`/`Out-File -Encoding utf8` write a byte-order mark: `git commit -F`
+keeps it in the subject, and `JSON.parse` fails with "Unexpected token", so a `--compare` baseline
+or `--args-file` looks corrupt. Write with `[IO.File]::WriteAllText($path, $text)`. The kit reads
+JSON through `readJsonFile` (`harness/src/jsonFile.ts`), which strips it; new readers should too.
 
-### `gh pr edit` fails on gh 2.31 with a Projects (classic) error
+### Other shell traps
 
-The `gh` on PATH here (2.31.0) queries `projectCards`, which GitHub has removed, so
-`gh pr edit --body-file` fails with "Projects (classic) is being deprecated". `gh pr create`
-still works. Update a body through REST instead:
-`gh api -X PATCH repos/<owner>/<repo>/pulls/<n> -F "body=@<file>"`. For attachments use the kit's
-portable gh (`harness/.artifacts/gh-portable/bin/gh.exe`, 2.101): `gh pr edit --attach` uploads
-`.webm` recordings, which render as inline videos. It refuses `#alt text` on a video
-("cannot set alt text on video"), so pass the bare path. Run it from the files' directory so
-the body's `./file.webm` references are rewritten to the uploads.
+- Silent `oxlint` looks the same as no `oxlint`: `pnpm exec oxlint <files>` prints nothing when
+  clean. In a Vortex checkout `pnpm nx run @vortex/renderer:lint` prints a result; use that.
+- A here-string piped into `git commit -F -` fails with "did not match any file(s)". Use a file.
+- `git show <sha>:<path> | Set-Content` re-encodes the file (Vitest may report "no tests"). Use
+  `git restore --source=<sha> --worktree -- <path>`.
+- `@(@("a", "b"))` flattens to `@("a", "b")`, so a one-pair find/replace list corrupts files.
+  Write `@(,@("a", "b"))` or use Python, and lint after bulk edits.
+- `pnpm exec oxfmt $files` fails with "Expected at least one target file"; splat with `@files`.
+- The agent sandbox refuses `Remove-Item Env:NODE_ENV`; use `$env:NODE_ENV=$null`, or better
+  let `pnpm run ai -- build --production` set it for the build only.
 
-### `oxfmt` with a PowerShell array fails
+### tsx: a scratch script can't import the kit by path, and `page.evaluate` loses `__name`
 
-`pnpm exec oxfmt $files`, where `$files` is a PowerShell array, fails with "Expected at least one
-target file". Pass each path as its own argument, or use `@files` splatting.
+tsx treats a `.ts` file without an ESM `package.json` above it as CommonJS, so top-level `await`
+fails: name it `.mts`. A Windows path in an import (`C:\dev\…`) parses as scheme `c:`; use
+`file:///C:/dev/…`. Bare names such as `fflate` don't resolve from outside the repo.
+`pnpm run ai -- script <file.mts>` runs it with the kit's tsx and puts `harness/src/kit.ts`'s URL
+in `VORTEX_AI_KIT`. And tsx hard-codes esbuild's `keepNames`, so a named inner function becomes
+`__name(fn, "name")` and `page.evaluate(fn)` throws "`__name` is not defined"; `attachToRenderer`
+defines it in the page (`NAME_SHIM`, `cdp.ts`), and kit modules send source text.
 
-### Silent `oxlint` looks the same as no `oxlint`
+### `gh pr edit` fails on old gh with a Projects (classic) error
 
-`pnpm exec oxlint <files>` prints nothing when the files are clean, so you can't tell a pass from a
-run that checked nothing. In a Vortex checkout, `pnpm nx run @vortex/renderer:lint` prints an
-explicit result. Use that as the evidence.
-
-### Vortex's E2E suite cannot give a local baseline as-is
-
-On this machine, stock `packages/e2e` has two problems:
-
-- The account specs fail instantly: "Missing required environment variable
-  E2E_NEXUS_FREE_USER_USERNAME".
-- Almost every other spec fails in fixture setup with "Vortex process exited unexpectedly with
-  code 0 before the main window appeared", then waits out its 6-minute timeout. That's a
-  main-window startup race in `packages/e2e/src/fixtures/vortex-app.ts`.
-
-A full run takes about 6 hours and proves nothing. Upstream CI runs E2E only when `packages/e2e`
-changes, or on a schedule on self-hosted runners that have the test accounts. So PRs outside that
-path never get E2E in CI, and the local run is the only E2E gate. Use the kit's E2E runner,
-`pnpm run ai:vortex-e2e -- --checkout <dir>` (see harness/AGENTS.md, "Vortex's own E2E suite"). It
-applies `harness/patches/e2e-window-startup.patch` for the run and restores the file byte for byte,
-and leaves out the account specs whose credentials are absent, reporting them separately. Don't
-run bare `playwright test`.
-
-The account specs can't be skipped by file: `game-management.spec.ts` mixes a signed-out test with
-a free-user one, and the tier loops (`account.spec.ts`, `mods*.spec.ts`) set `nexusUser` from a loop
-variable. The runner reads each describe's `test.use({ nexusUser })` and the tier in its title.
-
-### Panel content uses stable portals
-
-Page content is mounted through stable React portals so panel navigation and layout
-changes retain page state. The current split view does not track panel focus;
-sidebar navigation loads a separate saved workspace for each page. Do not add
-native pointer or focus listeners to the panel frame to make content clicks
-change the selected sidebar page.
-
-Previously hidden panel pages could make legacy SuperTable measure zero-width proxy columns. Its
-200ms header debounce then flashed collapsed columns when the page returned. Keep
-the last valid measurements while the proxy row has no width, and observe its size
-to synchronize the visible header before paint.
-
-For hover-only controls (the earlier panel trial used these), wait for the containing control strip's opacity transition before
-taking a scoped MCP snapshot. The button's own computed opacity can be `1` while its parent is
-still invisible. Sidebar width transitions likewise need a geometry assertion that waits for
-the final width before checking collapsed icon centering.
-
-The right-hand split view uses the sidebar's `transition-[width]` timing.
-React can batch a split's collapsed layout effect and expanded state into the
-same paint: `getComputedStyle(...).transitionDuration` then reports 150ms while
-the pane still jumps straight to full width. Keep the collapsed state through
-one painted animation frame, then set the target width in the next frame. The
-live regression samples successive pane widths and requires an intermediate
-value; a duration-only check misses this failure.
-
-The 20–80% divider ratio alone cannot guarantee the two-pane minimum. At a
-1536px window, 80/20 left a 243px Plugins pane and clipped its toolbar even
-though the total content width could fit two 440px panes. Clamp drag and keyboard
-ratios against the measured workspace width, and refit a saved ratio when the
-window narrows; retain the edge gesture for intentionally closing a pane.
-
-Even a 440px pane can be narrower than an extension's sticky toolbar: the
-gamebryo Plugins header was 494px wide and hid its trailing counters. A generic
-overflow rule on legacy `.mainpage-header` inside split panes lets users scroll
-to those actions without changing each extension page. Test this by scrolling
-the header to its end in a real Vortex; an unclipped table below does not prove
-the toolbar is reachable.
-
-Panel pop-outs were removed by design choice. Lessons from that experiment: child
-documents need CSSOM rules, SVG symbols, a base URL and a doctype; bare about:blank
-uses quirks mode and has no preload API. Its URL can inherit index.html, so URL-only
-CDP selection can pick the wrong window. Windows frameless windows retain resize
-borders, so zero outer-minus-inner size is not a valid titlebar test.
+gh 2.31 queries the removed `projectCards`, so `gh pr edit` fails with "Projects (classic) is
+being deprecated". Use `gh api -X PATCH repos/<owner>/<repo>/pulls/<n> -F "body=@<file>"`, or the
+kit's portable gh (`harness/.artifacts/gh-portable/bin/gh.exe`). Its `gh pr edit --attach` uploads
+`.webm` as inline video; pass the bare path (no `#alt text`) from the files' directory so
+`./file.webm` references are rewritten.

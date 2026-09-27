@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Copies the built extension (dist/index.js + info.json) into Vortex's local
+// Copies doodlebot's built extension (dist/index.js + info.json) into Vortex's local
 // plugins folder for manual testing. Run `pnpm run build` first.
 import { cpSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";

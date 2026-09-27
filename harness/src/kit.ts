@@ -1,18 +1,18 @@
 /**
- * One import for a scratch script run against the kit (`vortex-ai script <file.mts>`).
+ * One import for a scratch script run against the kit (`doodlebot script <file.mts>`).
  *
  * A script outside this repo cannot resolve the kit's dependencies by bare name (they live
  * in this repo's node_modules), and on Windows an absolute path in an import must be a
- * `file:///C:/...` URL. So it imports this file once, by the URL `vortex-ai script` puts in
+ * `file:///C:/...` URL. So it imports this file once, by the URL `doodlebot script` puts in
  * VORTEX_AI_KIT, and gets the harness modules and the zip helpers from here:
  *
- *   const kit: typeof import("file:///C:/dev/vortex-mcp/harness/src/kit.ts") =
+ *   const kit: typeof import("file:///C:/dev/doodlebot/harness/src/kit.ts") =
  *     await import(process.env.VORTEX_AI_KIT!);
  *   const config = kit.loadConfig();
  *   const mcp = kit.clientFor(config);
  *
  * Anything a script proves useful belongs in a harness module with a test, not in the
- * scratch file (AGENTS.md, "Every automation request improves the automation kit").
+ * scratch file (AGENTS.md, "Every automation request improves the kit").
  */
 import type { HarnessConfig } from "./config";
 import { VortexMcpClient } from "./mcpClient";

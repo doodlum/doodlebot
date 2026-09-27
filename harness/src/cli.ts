@@ -1,6 +1,6 @@
 #!/usr/bin/env -S node --experimental-strip-types
 /**
- * `vortex-ai` — the operator-facing entry point to the AI harness.
+ * `doodlebot` — the operator-facing entry point to the AI harness.
  *
  * Two audiences, one binary. A human runs `doctor`/`up`/`watch` to get a driven
  * Vortex running; an agent then talks to that instance over MCP and only comes
@@ -138,13 +138,13 @@ async function requireRunning(config: HarnessConfig): Promise<VortexMcpClient> {
     throw new ConfigError(
       `No Vortex instance is answering on ${mcp.url}.\n\n` +
         `Start one first:\n  pnpm run ai:up\n\n` +
-        `(or run \`vortex-ai doctor\` to check the setup)`,
+        `(or run \`doodlebot doctor\` to check the setup)`,
     );
   }
   return mcp;
 }
 
-const HELP = `vortex-ai — automation for stock Vortex and Vortex development
+const HELP = `doodlebot — automation for stock Vortex and Vortex development
 
 First run (no account or installed game required)
   pnpm install
@@ -605,7 +605,7 @@ async function main(): Promise<number> {
             case "main-changed":
               log(
                 "  Vortex's main-process bundle changed — a renderer reload will NOT pick that " +
-                  "up. Restart with `vortex-ai down && vortex-ai up`.",
+                  "up. Restart with `doodlebot down && doodlebot up`.",
               );
               break;
             case "error":
@@ -691,7 +691,7 @@ async function main(): Promise<number> {
       const target = typeof flags.url === "string" ? flags.url : positional[0];
       if (target === undefined) {
         throw new ConfigError(`collection needs a collection to install, e.g.
-  vortex-ai collection https://next.nexusmods.com/fallout4/collections/<slug>`);
+  doodlebot collection https://next.nexusmods.com/fallout4/collections/<slug>`);
       }
       const result = await installCollection(mcp, target, {
         onProgress: (m) => log(`  ${m}`),
@@ -751,14 +751,14 @@ async function main(): Promise<number> {
       log("Login captured. `up --fresh` will now start already signed in.");
       log(`  ${snapshot}`);
       log("");
-      log("Vortex was stopped to flush its state; bring it back with `vortex-ai up`.");
+      log("Vortex was stopped to flush its state; bring it back with `doodlebot up`.");
       return 0;
     }
 
     case "e2e": {
       const target = typeof flags.url === "string" ? flags.url : positional[0];
       if (target === undefined) {
-        throw new ConfigError("e2e needs a collection, e.g.\n  vortex-ai e2e <collection url>");
+        throw new ConfigError("e2e needs a collection, e.g.\n  doodlebot e2e <collection url>");
       }
       const runs = typeof flags.runs === "string" ? Number.parseInt(flags.runs, 10) : 1;
       if (!Number.isInteger(runs) || runs < 1)
@@ -801,8 +801,8 @@ async function main(): Promise<number> {
       if (source === undefined || source.trim() === "") {
         throw new ConfigError(
           'eval needs --expr "<expression>" or a file holding one, e.g.\n' +
-            '  vortex-ai eval --expr "document.title"\n' +
-            "  vortex-ai eval probe.js      (an async IIFE for statements)",
+            '  doodlebot eval --expr "document.title"\n' +
+            "  doodlebot eval probe.js      (an async IIFE for statements)",
         );
       }
       try {
@@ -823,7 +823,7 @@ async function main(): Promise<number> {
     case "script": {
       const file = positional[0];
       if (file === undefined) {
-        throw new ConfigError("script needs a file: vortex-ai script <file.mts> [its args...]");
+        throw new ConfigError("script needs a file: doodlebot script <file.mts> [its args...]");
       }
       const abs = path.resolve(file);
       if (!fs.existsSync(abs)) throw new ConfigError(`${abs} does not exist.`);
@@ -862,7 +862,7 @@ async function main(): Promise<number> {
 
     case "build-extension": {
       const root = await ensureExtensionBuilt({ rebuild: true });
-      log(`Built vortex-mcp at ${root}`);
+      log(`Built the extension at ${root}`);
       return 0;
     }
 
@@ -1079,7 +1079,7 @@ ${err.message}
 function targetFrom(flags: ParsedArgs["flags"]): Record<string, unknown> {
   if (typeof flags.ref === "string") return { ref: flags.ref };
   if (typeof flags.selector === "string") return { selector: flags.selector };
-  throw new ConfigError("Provide --ref <e12> (from `vortex-ai snapshot`) or --selector <css>.");
+  throw new ConfigError("Provide --ref <e12> (from `doodlebot snapshot`) or --selector <css>.");
 }
 
 /** tsx's CLI in this repo's node_modules, run with this Node. */

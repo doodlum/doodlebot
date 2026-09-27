@@ -1,5 +1,5 @@
 /**
- * Playwright fixtures that launch Vortex with vortex-mcp loaded and hand a test
+ * Playwright fixtures that launch Vortex with doodlebot's extension loaded and hand a test
  * both handles: Playwright's `Page` for the renderer, and an MCP client for the
  * AI automation tools.
  *

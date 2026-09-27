@@ -509,7 +509,7 @@ async function closeReview(
       throw new Error(
         `The collection did not reach its review screen within ${String(timeoutMs)}ms. ` +
           `Open dialogs: ${lastDialogs.join(" | ") || "none"}. ` +
-          "`vortex-ai call collection_install_state` shows the driver's step and the session.",
+          "`doodlebot call collection_install_state` shows the driver's step and the session.",
       );
     }
     await new Promise((resolve) => setTimeout(resolve, 1_000));

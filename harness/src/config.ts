@@ -62,9 +62,9 @@ export interface HarnessConfig {
    * OAuth; local UI/install/deployment tests need neither credential.
    */
   apiKey: string | undefined;
-  /** Bearer token unlocking vortex-mcp's write tools. Generated if unset. */
+  /** Bearer token unlocking the extension's write tools. Generated if unset. */
   mcpToken: string;
-  /** Port vortex-mcp listens on inside the launched Vortex. */
+  /** Port the extension's MCP server listens on inside the launched Vortex. */
   mcpPort: number;
   /** CDP port opened on the launched Vortex, for screenshots and Playwright. */
   cdpPort: number;
@@ -271,7 +271,9 @@ export function extensionRoot(): string {
   return REPO_ROOT;
 }
 
-export const MCP_EXTENSION_ID = "vortex-mcp";
+export const MCP_EXTENSION_ID = "doodlebot";
+/** Earlier ids of this extension; removed from a profile before installing, so two servers never load. */
+export const LEGACY_EXTENSION_IDS = ["vortex-mcp"];
 
 /**
  * Optional helper for integrations that specifically need the legacy API key.

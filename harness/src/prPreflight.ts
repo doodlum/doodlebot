@@ -677,6 +677,9 @@ export const REQUIRED_SECTIONS = [
   "Not covered",
 ];
 
+/** The line every Vortex PR description ends with (PULL-REQUESTS.md). */
+export const DOODLEBOT_FOOTER = "Written with [doodlebot](https://github.com/doodlum/doodlebot).";
+
 const CONVENTIONAL_TITLE =
   /^(?:feat|fix|perf|refactor|docs|test|build|ci|chore|style|revert)(?:\([\w./, -]+\))?!?: \S/;
 
@@ -746,6 +749,12 @@ export function lintPullRequest(pr: PullRequestText, localHead?: string): CheckR
       );
     }
   });
+
+  const lines = pr.body.split(/\r?\n/).map((line) => line.trim());
+  const footer = lines.lastIndexOf(DOODLEBOT_FOOTER);
+  if (footer === -1) fails.push(`body does not end with the doodlebot footer: ${DOODLEBOT_FOOTER}`);
+  else if (lines.slice(footer + 1).some((line) => line !== ""))
+    warns.push("the doodlebot footer is not the last line of the body");
 
   const head = pr.headRefOid.toLowerCase();
   const shas = pr.body.match(/\b[0-9a-f]{7,40}\b/gi) ?? [];

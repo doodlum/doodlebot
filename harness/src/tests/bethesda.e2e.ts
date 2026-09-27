@@ -52,7 +52,7 @@ if (
 ) {
   throw new Error(
     "This check needs the fake Fallout 4 with its private Documents folder. Start the instance " +
-      "with `vortex-ai up --dev-dir <checkout> --bethesda-sandbox`.",
+      "with `doodlebot up --dev-dir <checkout> --bethesda-sandbox`.",
   );
 }
 

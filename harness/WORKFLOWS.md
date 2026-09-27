@@ -61,8 +61,8 @@ fixtures and cover that capability with tests. Do not leave a successful manual
 experiment as the only way to reproduce a result. Preserve compatibility with
 released Vortex; process control and CDP belong in the harness.
 
-For exploring before that, `vortex-ai script <file.mts>` runs a scratch script against the kit
-under the instance lease, and `vortex-ai eval --expr "<js>"` inspects a harness renderer (see
+For exploring before that, `doodlebot script <file.mts>` runs a scratch script against the kit
+under the instance lease, and `doodlebot eval --expr "<js>"` inspects a harness renderer (see
 "Scratch scripts and renderer diagnostics" in AGENTS.md). Their results are leads; the check
 that settles a question is the one added to the kit.
 
@@ -93,7 +93,8 @@ A draft PR is not done until each of these is true and stated in its description
    answer every confirmed point, then re-verify.
 
 "Not run" is not an acceptable line in a PR description. If a gate cannot run here, say
-exactly what blocked it.
+exactly what blocked it. The description ends with the doodlebot footer, and
+`pnpm run ai:preflight -- --pr <number>` checks both.
 
 Titles, the description template, the reviewer brief and the lessons log are in
 [PULL-REQUESTS.md](PULL-REQUESTS.md). After every review, add any recurring class of finding to
@@ -107,7 +108,7 @@ and review points get lost. Split the work:
 
 - **The orchestrator** (the session the user is talking to) triages the report into one task per
   issue, keeps the list of open PRs and their state, and owns this kit. **It is the only agent that
-  edits `vortex-mcp`**: the harness, the extension, KNOWLEDGE.md, the skills and these docs. It gives
+  edits `doodlebot`**: the harness, the extension, KNOWLEDGE.md, the skills and these docs. It gives
   each agent its owner name, worktree and slot, and runs the gates that need a quiet machine (A/B
   timing, the final E2E baseline).
 - **One fresh subagent per issue or PR** does the Vortex-side work in its own worktree and its own
@@ -129,7 +130,7 @@ mid-task is often half-understood. So agents don't write them. Every subagent's 
 with a **Kit lessons** section: each non-obvious behaviour it lost time to, each missing capability
 it worked around, each doc that was wrong, with the evidence. When there are none, it says so. The
 orchestrator reads them as reports come in, checks each one, and turns it into a kit change, test
-and doc entry (AGENTS.md, "Every automation request improves the automation kit"). The next agent
+and doc entry (AGENTS.md, "Every automation request improves the kit"). The next agent
 it briefs inherits them. A subagent that is blocked on a missing capability stops and reports it
 rather than improvising a private workaround.
 
@@ -153,7 +154,7 @@ pnpm run ai -- down --owner fix-24290 --slot auto
   uncommitted work.
 - **A slot per agent** (`--slot auto` with its owner name, or `VORTEX_AI_SLOT=auto` and
   `VORTEX_AI_OWNER` in its environment): its own cache, artifacts, MCP and CDP ports and instance
-  lease. The owner keeps the same slot, with its warm profile, across commands. `vortex-ai slots`
+  lease. The owner keeps the same slot, with its warm profile, across commands. `doodlebot slots`
   shows who has which.
 - `pnpm run verify`, `vortex-e2e` and `ai:test` run in the agent's own worktree and slot. Two
   `vortex-e2e` runs never overlap: they share a lease of their own, so one waits for the other.

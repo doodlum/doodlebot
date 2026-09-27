@@ -5,7 +5,7 @@ description: Drive a real Vortex instance through its UI — read what is on scr
 
 # Driving Vortex
 
-You control Vortex through the `vortex-mcp` extension's MCP tools. Read
+You control Vortex through doodlebot's MCP tools. Read
 [KNOWLEDGE.md](../../../KNOWLEDGE.md) before debugging anything that looks
 impossible — most Vortex surprises are catalogued there.
 
@@ -73,7 +73,7 @@ any action that re-renders, snapshot again before acting.
   re-rendered per update; `measureAfter` for blocking until the table shows a change;
   `recordDialogFade` for a dialog's content while it closes) or `ai:test:mods-scroll`, not
   hand-written page scripts.
-- **Diagnostics in the renderer.** `vortex-ai eval --expr "<js>"` evaluates in a
+- **Diagnostics in the renderer.** `doodlebot eval --expr "<js>"` evaluates in a
   harness instance only. It is for looking; anything a test relies on belongs in a
   tool or helper.
 - **PowerShell:** quote comma lists (`--viewports "1024x720,1280x720"`).

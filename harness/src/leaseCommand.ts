@@ -1,5 +1,5 @@
 /**
- * `vortex-ai lease run --owner X -- <command...>`: run any command holding the leases.
+ * `doodlebot lease run --owner X -- <command...>`: run any command holding the leases.
  *
  * This is how things the kit does not launch itself (`pnpm run verify`, an ad-hoc script,
  * Vortex's E2E suite by hand) are serialized with everything that does. The child gets

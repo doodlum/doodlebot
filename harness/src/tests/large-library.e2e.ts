@@ -75,7 +75,7 @@ const gameId = await mcp.call<string | null>("vortex_query", { selector: "active
 if (gameId !== "vortexaisandbox") {
   throw new Error(
     `This check deploys and purges, so it runs only on the sandbox game (active: ${String(gameId)}). ` +
-      "Start the instance with `vortex-ai up --sandbox`.",
+      "Start the instance with `doodlebot up --sandbox`.",
   );
 }
 const originalLayout = await mcp.call<boolean>("vortex_query", {
@@ -256,7 +256,7 @@ try {
         throw new Error(
           `the purge before the ${where} deploy left ${String(deployedCount())} fixture files in ` +
             `${deployed}. Another instance or a deploy still running may own them; purge from ` +
-            `Vortex (or with \`vortex-ai purge\`) and rerun rather than deleting them by hand.`,
+            `Vortex (or with \`doodlebot purge\`) and rerun rather than deleting them by hand.`,
         );
       }
       const ms = await timeDeploy(mcp, gameId);

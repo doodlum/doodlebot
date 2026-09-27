@@ -7,7 +7,7 @@
  * actually has installed.
  *
  * Deliberately `spawn`-based rather than Playwright's `_electron.launch`: an
- * instance started by `vortex-ai up` has to outlive the process that started it,
+ * instance started by `doodlebot up` has to outlive the process that started it,
  * so an agent can drive it across many separate tool calls. A Playwright-owned
  * Electron dies with its controlling script. The Playwright specs get their own
  * fixture (src/tests/fixtures.ts), because a test genuinely does want that.
@@ -19,7 +19,12 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { createHash } from "node:crypto";
 
-import { extensionRoot, MCP_EXTENSION_ID, type HarnessConfig } from "./config";
+import {
+  extensionRoot,
+  LEGACY_EXTENSION_IDS,
+  MCP_EXTENSION_ID,
+  type HarnessConfig,
+} from "./config";
 import { VortexMcpClient } from "./mcpClient";
 import { installSandboxExtension } from "./sandbox";
 import { instanceResource } from "./slots";
@@ -248,7 +253,11 @@ export function prepareUserDataDir(userDataDir: string, appName: string): void {
  * match info.json's `id` or Vortex treats it as a different extension next run.
  */
 export function installMcpExtension(userDataDir: string, source = extensionRoot()): void {
-  const target = path.join(userDataDir, "userData", "plugins", MCP_EXTENSION_ID);
+  const plugins = path.join(userDataDir, "userData", "plugins");
+  // A profile cached before the rename still holds the old folder: both would start a server.
+  for (const legacy of LEGACY_EXTENSION_IDS)
+    fs.rmSync(path.join(plugins, legacy), { recursive: true, force: true });
+  const target = path.join(plugins, MCP_EXTENSION_ID);
   fs.mkdirSync(target, { recursive: true });
   fs.cpSync(path.join(source, "dist"), target, { recursive: true });
   fs.cpSync(path.join(source, "info.json"), path.join(target, "info.json"));
@@ -451,7 +460,7 @@ function openStdioLog(userDataDir: string): number | undefined {
 }
 
 /**
- * How Vortex is spawned. Detached, so it outlives the `vortex-ai` process that started it, and
+ * How Vortex is spawned. Detached, so it outlives the `doodlebot` process that started it, and
  * with none of that process's stdio: stdin is ignored and stdout/stderr go to a log file (or
  * nowhere). A Vortex holding the caller's pipes keeps a shell that captures `up`'s output
  * (PowerShell `*>`, `| Select-String`, a tool reading stdout) waiting until Vortex exits.
@@ -490,7 +499,7 @@ export async function launchVortex(options: LaunchOptions): Promise<VortexInstan
 
   if (target.executable === "") {
     throw new Error(
-      "No Vortex executable resolved. Run `vortex-ai doctor` — it will say what is missing.",
+      "No Vortex executable resolved. Run `doodlebot doctor` — it will say what is missing.",
     );
   }
 

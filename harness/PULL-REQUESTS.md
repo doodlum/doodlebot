@@ -61,7 +61,15 @@ commit) or answered (why).
 ## Not covered
 
 Related problems found but left out, each with an issue link.
+
+---
+
+Written with [doodlebot](https://github.com/doodlum/doodlebot).
 ```
+
+**Every PR description ends with that footer**: a rule, then the doodlebot line, exactly as
+above. It is the last thing in the body. When a tool adds its own attribution line (Claude Code's
+"Generated with"), keep it above the footer. `pr-preflight --pr` fails a description without it.
 
 Rules for the content:
 
@@ -117,12 +125,12 @@ judgment". The loop is working when the numbers other than judgment reach zero.
 The orchestrator sends each fix agent this brief, filled in:
 
 ```text
-Fix <issue/PR url> as owner <name>, in the worktree <checkout> (vortex-mcp/.vortex-worktrees/<name>)
+Fix <issue/PR url> as owner <name>, in the worktree <checkout> (doodlebot/.vortex-worktrees/<name>)
 on branch <branch> (from <base>). Problem: <what the user sees,
 reproduction, suspected cause>. Review findings to address, if any: <path to review output>.
 
 Read the checkout's AGENTS.md, CLAUDE.md, CODESTYLE.md, docs/testing.md and
-vortex-mcp/harness/PULL-REQUESTS.md, especially "Getting it right before review" and "Review
+doodlebot/harness/PULL-REQUESTS.md, especially "Getting it right before review" and "Review
 lessons". Before changing code, write your callers, exit paths and behaviour changes list. Then
 write a test that fails on the base, make the smallest complete fix, and run the scoped tests,
 typecheck and lint. Run `pnpm run ai:preflight -- --checkout <checkout> --pr <number>` and resolve
@@ -134,7 +142,7 @@ You may run Vortex from your worktree in your own slot only: pass `--owner <name
 --slot auto` to every kit command (`up`, `screenshot`, `down`, `script`), and `--slot auto` to the
 `ai:test:*` scripts through `VORTEX_AI_SLOT=auto` and `VORTEX_AI_OWNER=<name>`. `down` before you
 run `pnpm run verify` in the worktree, because verify rewrites the build the running Vortex loads. Do not
-edit vortex-mcp (its harness, KNOWLEDGE.md, skills or docs), edit the PR description, or use any
+edit doodlebot (its harness, KNOWLEDGE.md, skills or docs), edit the PR description, or use any
 other checkout. The renderer's vitest environment is happy-dom, not jsdom. Report: the pushed sha,
 your callers, exit-path and behaviour lists, the negative control, the commands you ran and their
 results, the preflight report, and last a **Kit lessons** section: each non-obvious behaviour you
@@ -154,9 +162,9 @@ Send it this brief, filled in:
 ```text
 QA and review Vortex PR <url> (branch <branch>, head <sha>, base <base sha>). You did not write it.
 Assume it is wrong until your own testing shows otherwise. Read the checkout's AGENTS.md,
-CODESTYLE.md and docs/testing.md, and vortex-mcp's harness/AGENTS.md, KNOWLEDGE.md and
-harness/PULL-REQUESTS.md. Checkout: your own worktree <dir> (vortex-mcp/.vortex-worktrees/<qa-name>).
-Do not commit, push, edit the PR, or edit vortex-mcp. Pass `--owner <qa-name> --worktree <qa-name>
+CODESTYLE.md and docs/testing.md, and doodlebot's harness/AGENTS.md, KNOWLEDGE.md and
+harness/PULL-REQUESTS.md. Checkout: your own worktree <dir> (doodlebot/.vortex-worktrees/<qa-name>).
+Do not commit, push, edit the PR, or edit doodlebot. Pass `--owner <qa-name> --worktree <qa-name>
 --slot auto` to every kit command (`up`, `down`; `vortex-e2e --checkout <dir>`); for the `ai:test:*` scripts set
 `VORTEX_AI_OWNER=<qa-name>` and `VORTEX_AI_SLOT=auto`. Take
 `pnpm run ai -- lease acquire --owner <qa-name> --slot auto --purpose "QA <pr>" --ttl 120 --checkout <dir>`
@@ -259,12 +267,13 @@ catch it.
    harness overhead, need the number of runs and the spread. (#24283.)
 10. **No measurements in code comments.** (#24284.)
 11. **Make a performance fix fail without its wiring.** When the fix doesn't change behaviour, a
-    "fails on the base" test is impossible. Count the work instead: wrap the input in a counting
-    `Proxy` (or, for a structure that is rebuilt each pass, count through the functions that copy it, since a Proxy only sees the first copy; a copy made from a call's own earlier copy is invisible without a production hook, and then a relative-timing test (N changed items against 1, fastest of several runs, sized past V8's ~1,000-property dictionary threshold) is the fallback, disclosed in the PR) and assert reads, dispatches or calls per item, so the test fails on the base and
-    with only the wiring reverted. (#24283: reads per rule 779 against 38.) A connected class
-    component such as `SuperTable` can be tested without a store: mock the `ComponentEx`
-    wrappers (`connect`, `extend`, `translate`) as identity functions and make `setState` commit
-    synchronously. (#24284: `controls/table/calculatedValues.test.ts`.)
+    "fails on the base" test is impossible, so count the work. Wrap the input in a counting `Proxy`,
+    or count through the functions that copy it when it is rebuilt each pass, and assert reads,
+    dispatches or calls per item. Only when neither can see the work, use a relative-timing test
+    (N changed items against 1, fastest of several runs) and disclose it in the PR. A connected
+    class component such as `SuperTable` can be tested without a store: mock the `ComponentEx`
+    wrappers (`connect`, `extend`, `translate`) as identity functions and make `setState`
+    commit synchronously. (#24283, #24284: `controls/table/calculatedValues.test.ts`.)
 12. **Reviewers verify their own claims too.** Before saying a change "forces a render" or "throws",
     trace the guard that decides it. (#24284: `updateState`'s deep `_.isEqual` meant the unguarded
     copy cost O(n) but never rendered.)
@@ -276,8 +285,7 @@ catch it.
     no-op. #24281 with #24284: both touch `Table.tsx`.)
 14. **Render-path changes must keep unchanged items the same object.** When a change touches how
     derived state or rows are rebuilt, assert that unchanged items keep their reference (`toBe`),
-    including when values are `null` or `undefined`, not just that the values are equal. QA must
-    then exercise every major consumer of the changed component in the app, not only the one the
-    fix is for. (#24284: every Mods-page row got a new object because a `null` column looked
-    changed on every pass, so adding one mod went from 1.1 s to 12.9 s. The Plugins page, the
-    fix's target, got 3× faster.)
+    including when values are `null` or `undefined`, not just that the values are equal. QA then
+    exercises every major consumer of the changed component, not only the one the fix is for.
+    (#24284: a `null` column looked changed on every pass, so every Mods-page row got a new
+    object, while the Plugins page, the fix's target, got faster.)

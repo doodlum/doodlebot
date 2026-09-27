@@ -290,7 +290,7 @@ export async function resolveVortexRepo(): Promise<ForkInfo> {
     // Not fatal — someone may keep a non-fork mirror — but worth saying, because
     // the usual cause is a typo'd username that happens to own a repo named Vortex.
     process.stderr.write(
-      `[vortex-ai] note: ${fork.fullName} is not a fork of ${UPSTREAM}; using it anyway.\n`,
+      `[doodlebot] note: ${fork.fullName} is not a fork of ${UPSTREAM}; using it anyway.\n`,
     );
   }
 
@@ -363,7 +363,7 @@ export async function buildVortexSource(options: EnsureSourceOptions = {}): Prom
   const report = options.onProgress ?? ((): void => undefined);
   const dir = options.dir ?? vortexSourceDir();
   if (!hasVortexSource(dir)) {
-    throw new ForkError(`No Vortex clone at ${dir}. Run \`vortex-ai source\` first.`);
+    throw new ForkError(`No Vortex clone at ${dir}. Run \`doodlebot source\` first.`);
   }
 
   report("installing dependencies (slow: native modules are rebuilt)");

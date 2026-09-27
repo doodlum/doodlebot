@@ -1,15 +1,18 @@
 {
-  "name": "vortex-mcp",
+  "name": "doodlebot",
   "version": "1.0.0",
   "private": true,
-  "description": "Vortex extension exposing an MCP server for programmatic control of Vortex",
-  "homepage": "https://github.com/alandtse/vortex-mcp#readme",
-  "bugs": "https://github.com/alandtse/vortex-mcp/issues",
+  "description": "An agentic development and testing tool for Vortex: an MCP server inside Vortex, and a harness that launches, drives and verifies it",
+  "homepage": "https://github.com/doodlum/doodlebot#readme",
+  "bugs": "https://github.com/doodlum/doodlebot/issues",
   "license": "GPL-3.0-only",
-  "author": "Alan Tse",
+  "author": "doodlum",
+  "contributors": [
+    "Alan Tse (original vortex-mcp, https://github.com/alandtse/vortex-mcp)"
+  ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/alandtse/vortex-mcp.git"
+    "url": "git+https://github.com/doodlum/doodlebot.git"
   },
   "type": "commonjs",
   "scripts": {
@@ -44,9 +47,7 @@
     "ai:test:plugins-page": "tsx harness/src/tests/plugins-page.e2e.ts",
     "ai:test:download-churn": "tsx harness/src/tests/download-churn.e2e.ts",
     "ai:test:mods-scroll": "tsx harness/src/tests/mods-scroll.e2e.ts",
-    "install-plugin": "node scripts/install-local.mjs",
-    "docs:tools": "node scripts/generate-readme-tools-table.mjs",
-    "docs:tools:check": "node scripts/generate-readme-tools-table.mjs --check"
+    "install-plugin": "node scripts/install-local.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/node": "2.0.0",

@@ -18,6 +18,7 @@ import {
   hunkAt,
   importTargets,
   isTestFile,
+  DOODLEBOT_FOOTER,
   lintPullRequest,
   measurementsInComments,
   memberUse,
@@ -443,6 +444,12 @@ None.
 ## Not covered
 
 Nothing.
+
+---
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Written with [doodlebot](https://github.com/doodlum/doodlebot).
 `;
 
 describe("PR description lint", () => {
@@ -482,6 +489,17 @@ describe("PR description lint", () => {
     );
     expect(result.status).toBe("warn");
     expect(result.details).toHaveLength(3);
+  });
+
+  it("fails a description without the doodlebot footer, and warns when it isn't last", () => {
+    const without = GOOD_BODY.replace(DOODLEBOT_FOOTER, "");
+    expect(lintPullRequest(pr({ body: without })).details.join("\n")).toContain("doodlebot footer");
+    expect(lintPullRequest(pr({ body: without })).status).toBe("fail");
+    const notLast = lintPullRequest(pr({ body: `${GOOD_BODY}\nAn afterthought.\n` }));
+    expect(notLast).toMatchObject({
+      status: "warn",
+      details: ["warn: the doodlebot footer is not the last line of the body"],
+    });
   });
 
   it("reads subsections as part of their section", () => {

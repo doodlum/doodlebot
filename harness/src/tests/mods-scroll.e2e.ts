@@ -79,7 +79,7 @@ const gameId = await mcp.call<string | null>("vortex_query", { selector: "active
 if (gameId !== "vortexaisandbox") {
   throw new Error(
     `This check runs only on the sandbox game (active: ${String(gameId)}). ` +
-      "Start the instance with `vortex-ai up --sandbox`.",
+      "Start the instance with `doodlebot up --sandbox`.",
   );
 }
 const status = await mcp.call<{ nodeEnv: string | null }>("automation_status");

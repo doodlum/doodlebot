@@ -15,7 +15,7 @@
  *   - **implicit**: taken by a command for as long as it runs. It is live while any holder
  *     process, or any Vortex that command launched, is alive. `up` ends with only the
  *     Vortex left holding it, so the lease lasts until `down`.
- *   - **explicit**: taken with `vortex-ai lease acquire`. It is live until its TTL passes
+ *   - **explicit**: taken with `doodlebot lease acquire`. It is live until its TTL passes
  *     (re-acquiring renews it) or, with `--pid`, while that process lives.
  *
  * A lease whose holder is gone is stale and is reclaimed by the next acquirer, which says
@@ -223,7 +223,7 @@ export function withLeaseMutex<T>(dir: string, fn: () => T): T {
         // Removed by its owner meanwhile.
       }
       if (Date.now() > deadline) {
-        throw new Error(`Timed out waiting for ${lock}; remove it if no vortex-ai is running.`, {
+        throw new Error(`Timed out waiting for ${lock}; remove it if no doodlebot is running.`, {
           cause: err,
         });
       }

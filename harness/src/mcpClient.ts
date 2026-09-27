@@ -1,7 +1,7 @@
 /**
- * A minimal MCP client for the vortex-mcp server running inside Vortex.
+ * A minimal MCP client for doodlebot's MCP server running inside Vortex.
  *
- * Hand-rolled rather than pulled from the MCP SDK on purpose: vortex-mcp's
+ * Hand-rolled rather than pulled from the MCP SDK on purpose: the extension's
  * transport is *stateless* Streamable HTTP (2026-07-28 spec — no `initialize`
  * handshake, no session id), so a conforming call is a single JSON-RPC POST.
  * The SDK would add a dependency and a connection lifecycle to manage for
@@ -70,8 +70,8 @@ export class VortexMcpClient {
 
     if (response.status === 403) {
       throw new Error(
-        "vortex-mcp rejected the token (403). The VORTEX_MCP_TOKEN the harness is using does not " +
-          "match the one Vortex was launched with — relaunch through `vortex-ai up` so both come " +
+        "The extension rejected the token (403). The VORTEX_MCP_TOKEN the harness is using does not " +
+          "match the one Vortex was launched with — relaunch through `doodlebot up` so both come " +
           "from the same config.",
       );
     }
@@ -113,7 +113,7 @@ export class VortexMcpClient {
   /**
    * Call a tool and parse its first text block as JSON.
    *
-   * Every vortex-mcp tool that returns structured data serialises it through one
+   * Every extension tool that returns structured data serialises it through one
    * `jsonText` helper, so this is the normal path. Tools that return a plain
    * status sentence (`switch_profile`, `backup_state`) are handled by returning
    * the string itself rather than throwing on a JSON parse failure.
@@ -172,7 +172,7 @@ export class VortexMcpClient {
       if (await this.ping()) return;
       if (Date.now() - started > timeoutMs) {
         throw new Error(
-          `vortex-mcp did not become ready within ${String(Math.round(timeoutMs / 1000))}s ` +
+          `The extension did not become ready within ${String(Math.round(timeoutMs / 1000))}s ` +
             `(${this.#url}; last state: ${lastError}). Check that the extension is installed into ` +
             `the instance's plugins/ directory and that Vortex actually started.`,
         );

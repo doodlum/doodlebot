@@ -235,7 +235,11 @@ function inclusiveRank(
       if (!gc && (functionName === "" || functionName.startsWith("("))) return;
       // The app's own tree: no dependencies, no native frames, and not this kit's extension,
       // whose dispatch wrapper (perf_trace) would otherwise top every inclusive list.
-      const foreign = url === "" || url.includes("node_modules") || url.includes("vortex-mcp");
+      const foreign =
+        url === "" ||
+        url.includes("node_modules") ||
+        url.includes("doodlebot") ||
+        url.includes("vortex-mcp");
       if (appOnly && (gc || foreign)) return;
       const key = gc ? functionName : frameKey(node);
       if (depth === 0) self.set(key, (self.get(key) ?? 0) + us);

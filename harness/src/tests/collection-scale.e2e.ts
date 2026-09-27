@@ -102,7 +102,7 @@ if (
   (await mcp.call<string | null>("vortex_query", { selector: "activeGameId" })) !==
   "vortexaisandbox"
 ) {
-  throw new Error("Run this on the sandbox game: `vortex-ai up --sandbox`.");
+  throw new Error("Run this on the sandbox game: `doodlebot up --sandbox`.");
 }
 const status = await mcp.call<{
   userDataDir: string | null;

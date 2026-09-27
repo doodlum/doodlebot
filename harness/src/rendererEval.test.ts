@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { isHarnessProfile } from "./rendererEval";
 
 describe("renderer eval's instance check", () => {
-  const cache = path.resolve("C:/cache/vortex-ai");
+  const cache = path.resolve("C:/cache/doodlebot");
 
   it("accepts only a profile inside the harness cache", () => {
     expect(isHarnessProfile(cache, path.join(cache, "live", "userData"))).toBe(true);

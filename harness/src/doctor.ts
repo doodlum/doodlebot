@@ -232,7 +232,7 @@ async function checkRunning(config: HarnessConfig): Promise<Check> {
 }
 
 export function formatDoctorReport(report: DoctorReport): string {
-  const lines: string[] = ["vortex-ai doctor", ""];
+  const lines: string[] = ["doodlebot doctor", ""];
   for (const check of report.checks) {
     const mark = check.ok ? "ok  " : check.advisory === true ? "--  " : "FAIL";
     lines.push(`  [${mark}] ${check.name}`);

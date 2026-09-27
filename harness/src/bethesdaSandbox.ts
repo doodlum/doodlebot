@@ -185,7 +185,7 @@ export function assertRedirected(
       `Vortex resolved documents=${String(actual?.documents)} and localAppData=` +
         `${String(actual?.localAppData)}, not the sandbox's ${expected.documents} and ` +
         `${expected.localAppData}. Refusing to manage the fake game, which would write to the ` +
-        `real Fallout 4 profile. Restart the instance through \`vortex-ai up --bethesda-sandbox\`.`,
+        `real Fallout 4 profile. Restart the instance through \`doodlebot up --bethesda-sandbox\`.`,
     );
   }
 }

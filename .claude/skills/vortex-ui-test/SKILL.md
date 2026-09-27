@@ -74,7 +74,7 @@ app per assertion.
   exercise native wheel or browser zoom behavior. The opt-in `ai:test:zoom`
   script checks applied scaling and UI behavior, including every rendered frame
   during rapid zoom changes. Run it with `--signed-out` for an isolated anonymous
-  profile. `vortex-ai record --ffmpeg <path> --seconds 15 --label demo` captures
+  profile. `doodlebot record --ffmpeg <path> --seconds 15 --label demo` captures
   real-time WebM clips while another MCP/CLI session drives the app.
 
 ## Panel-system regression
