@@ -33,6 +33,7 @@ export * as largeLibrary from "./largeLibrary";
 export * as localMod from "./localMod";
 export * as offlineCollection from "./offlineCollection";
 export * as profiling from "./profiling";
+export * as recording from "./recording";
 export * as tableProbes from "./tableProbes";
 export * as ui from "./uiDriver";
 export * as vortexLog from "./vortexLog";
