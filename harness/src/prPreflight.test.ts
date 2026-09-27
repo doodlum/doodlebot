@@ -449,7 +449,7 @@ Nothing.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 
-Written with [doodlebot](https://github.com/doodlum/doodlebot).
+Written with [doodlebot](https://github.com/doodlum/vortex-doodlebot).
 `;
 
 describe("PR description lint", () => {

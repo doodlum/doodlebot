@@ -64,7 +64,7 @@ Related problems found but left out, each with an issue link.
 
 ---
 
-Written with [doodlebot](https://github.com/doodlum/doodlebot).
+Written with [doodlebot](https://github.com/doodlum/vortex-doodlebot).
 ```
 
 **Every PR description ends with that footer**: a rule, then the doodlebot line, exactly as

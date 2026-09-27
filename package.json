@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "description": "An agentic development and testing tool for Vortex: an MCP server inside Vortex, and a harness that launches, drives and verifies it",
-  "homepage": "https://github.com/doodlum/doodlebot#readme",
-  "bugs": "https://github.com/doodlum/doodlebot/issues",
+  "homepage": "https://github.com/doodlum/vortex-doodlebot#readme",
+  "bugs": "https://github.com/doodlum/vortex-doodlebot/issues",
   "license": "GPL-3.0-only",
   "author": "doodlum",
   "contributors": [
@@ -12,7 +12,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/doodlum/doodlebot.git"
+    "url": "git+https://github.com/doodlum/vortex-doodlebot.git"
   },
   "type": "commonjs",
   "scripts": {

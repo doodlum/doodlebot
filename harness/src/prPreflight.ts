@@ -678,7 +678,8 @@ export const REQUIRED_SECTIONS = [
 ];
 
 /** The line every Vortex PR description ends with (PULL-REQUESTS.md). */
-export const DOODLEBOT_FOOTER = "Written with [doodlebot](https://github.com/doodlum/doodlebot).";
+export const DOODLEBOT_FOOTER =
+  "Written with [doodlebot](https://github.com/doodlum/vortex-doodlebot).";
 
 const CONVENTIONAL_TITLE =
   /^(?:feat|fix|perf|refactor|docs|test|build|ci|chore|style|revert)(?:\([\w./, -]+\))?!?: \S/;
