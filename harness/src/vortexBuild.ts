@@ -32,7 +32,13 @@ import {
   type LeaseEnv,
 } from "./lease";
 import { bundleModeOf, type BundleMode } from "./productionMode";
-import { childEnv, missingBuildOutputs, parsePnpmVersion, selectPnpmCommand } from "./source";
+import {
+  childEnv,
+  missingBuildOutputs,
+  nestedPath,
+  parsePnpmVersion,
+  selectPnpmCommand,
+} from "./source";
 
 /** Tracked files Vortex's build regenerates. */
 export const GENERATED_FILES = ["etc/vortex.api.md", "etc/Dependency Report.md"];
@@ -44,7 +50,9 @@ export function buildEnvironment(base: NodeJS.ProcessEnv, production: boolean): 
     if (/^(npm_|PNPM_|COREPACK_)/i.test(key)) continue;
     // Windows environment names are case-insensitive: drop every spelling.
     if (key.toUpperCase() === "NODE_ENV") continue;
-    if (value !== undefined) env[key] = value;
+    if (value === undefined) continue;
+    // the checkout's own scripts call pnpm too; they must get its version (source.ts)
+    env[key] = key.toUpperCase() === "PATH" ? nestedPath(value) : value;
   }
   if (production) env.NODE_ENV = "production";
   return env;

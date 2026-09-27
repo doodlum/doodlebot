@@ -50,9 +50,20 @@ export const BOOLEAN_FLAGS = new Set([
 /**
  * Flags `script` takes for itself wherever they appear, even after the script's path: agents
  * put `--owner` last as often as first, and a script run as the wrong owner is refused the
- * lease. Everything else after the path is the script's; after a bare `--`, all of it is.
+ * lease. The flags that pick the instance count too: a `--slot auto` after the path used to
+ * reach the script instead, which then drove slot 0's Vortex. Everything else after the path is
+ * the script's; after a bare `--`, all of it is.
  */
-export const SCRIPT_KIT_FLAGS = new Set(["owner", "wait"]);
+export const SCRIPT_KIT_FLAGS = new Set([
+  "owner",
+  "wait",
+  "slot",
+  "worktree",
+  "dev-dir",
+  "cache-dir",
+  "port",
+  "cdp-port",
+]);
 
 export function parseArgs(argv: string[]): ParsedArgs {
   // `pnpm run ai -- status` forwards the `--` separator itself, so the first

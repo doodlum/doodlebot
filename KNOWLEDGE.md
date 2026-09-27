@@ -108,6 +108,12 @@ game by itself. Register the path with a raw `type:ADD_DISCOVERED_GAME` dispatch
 
 ## Building Vortex from here
 
+### The first vitest run in a new worktree installs
+
+`pnpm exec vitest` in a worktree nobody has run tests in yet starts an install and postinstall,
+native-module rebuild included, even while a Vortex runs from that worktree. Run the first scoped
+test before `up`, or expect the wait.
+
 ### A running app holds native modules open
 
 A running source Vortex keeps plugin DLLs such as `libloot.dll` open, watcher or not. An nx cache
@@ -191,6 +197,23 @@ and leaves out account specs without credentials by reading each describe's
 
 ## Games and profiles
 
+### What did Play actually launch?
+
+The `launch_game` MCP tool resolves the executable its own way, so its result is no evidence of
+what Vortex's Play button does. Play goes `ToolsSection` → `useTools.handlePlay` →
+`StarterInfo.run(primaryStarter)`: the tool named by `settings.interface.primaryTool[gameId]`
+when it has an `exePath`, otherwise the game's own starter (on Steam, a store launch). To see which
+one ran, click Play and read Vortex's log: a sandbox's stand-in executables fail to start, and the
+`Failed to run tool` line names the one tried. Play's analytics event also carries
+`launch_method` (`"store"` for the game starter).
+
+### A user's state.v2 copy settles what the log can't
+
+A user's `state.v2` folder is a LevelDB copy of their Vortex state. Read it, never in place and
+never their original, with `leveldown` from a Vortex checkout's `node_modules`, over a copy of
+the folder. In the launcher report it showed `tools.pinned.skyrimse.skse64=true` and no
+`primaryTool`: the user had pinned SKSE, not made it the launcher.
+
 ### `activate-game` is a dead end for a game with no profile
 
 It opens a "Choose profile" dialog with an empty list and takes no callback, so it and
@@ -204,7 +227,10 @@ newer: "Add game" or "Manual add"), so match the class first and the label as a 
 `--fresh`, cold and rebuild starts replace profile and staging, but the game folder keeps the last
 run's files and `vortex.deployment.json`, so the next deploy stops on External Changes, "Source
 files were deleted". Bootstrap empties a disposable game's `Data` (keeping `Fallout4.esm`) and
-plugin lists on reset, only for games inside the cache.
+plugin lists on reset, only for games inside the cache. It also removes what engine-injector
+(`dinput`) mods deployed into the game root, from their `vortex.deployment.<type>.json`. Left
+there, a script extender from the last run was discovered at the next fresh activation, and a
+"found after activation" bug looked fixed.
 
 ## The UI
 

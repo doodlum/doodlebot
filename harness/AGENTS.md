@@ -224,8 +224,8 @@ scopes the snapshot so a large table can't exhaust its node budget. Avoid native
 ### Scratch scripts and renderer diagnostics
 
 `doodlebot script <file.mts> [args...]` runs a scratch script with the kit's tsx under the instance
-lease, with the instance's cache, ports and token in its environment. `--owner` and `--wait` are
-the kit's anywhere; other arguments, and all after `--`, are the script's. Outside this repo use
+lease, with the instance's cache, ports and token in its environment. `--owner`, `--wait` and the
+instance flags (`--slot`, `--worktree`, `--dev-dir`, `--cache-dir`, ports) are the kit's anywhere; other arguments, and all after `--`, are the script's. Outside this repo use
 `.mts` (top-level `await`) and import the kit by the URL in `VORTEX_AI_KIT`:
 
 ```ts

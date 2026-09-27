@@ -252,8 +252,9 @@ Driving a running instance
                          whose profile is not in this cache). Promises are awaited.
   script <file.mts> [args...]
                          Run a scratch script with the kit's tsx under the instance lease.
-                         --owner <name> and --wait <min> are the kit's anywhere, even after
-                         the file; every other argument (and all after --) is the script's.
+                         --owner, --wait and the instance flags (--slot, --worktree, --dev-dir,
+                         --cache-dir, --port, --cdp-port) are the kit's anywhere, even after the
+                         file; every other argument (and all after --) is the script's.
                          VORTEX_AI_KIT holds the import URL of harness/src/kit.ts
   record                 Save WebM; --ffmpeg <path> --seconds <1-60> --label <name>
   install <archive>      Install local ZIP/7z through Vortex; no account needed
@@ -836,7 +837,7 @@ async function main(): Promise<number> {
       }
       const kit = pathToFileURL(path.join(REPO_ROOT, "harness", "src", "kit.ts")).href;
       const owner = resolveOwner(config.owner);
-      // --owner and --wait are the kit's wherever they appear, even after the file (cliArgs.ts).
+      // --owner, --wait and the instance flags are the kit's wherever they appear (cliArgs.ts).
       log(`script: ${abs} as owner "${owner}" (VORTEX_AI_KIT=${kit})`);
       return runUnderLease({
         command: process.execPath,

@@ -23,6 +23,12 @@ describe("parseArgs", () => {
     expect(inline.passthrough).toEqual(["a"]);
   });
 
+  it("takes the flags that pick the instance after the file too", () => {
+    const parsed = parseArgs(["script", "probe.mts", "--slot", "auto", "--worktree", "fix-a", "x"]);
+    expect(parsed.flags).toMatchObject({ slot: "auto", worktree: "fix-a" });
+    expect(parsed.passthrough).toEqual(["x"]);
+  });
+
   it("gives the script everything after a bare --, its own --owner included", () => {
     const parsed = parseArgs(["script", "probe.mts", "--owner", "qa", "--", "--owner", "theirs"]);
     expect(parsed.flags.owner).toBe("qa");

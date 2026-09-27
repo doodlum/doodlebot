@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { HarnessConfig } from "./config";
-import { localOnlyConfig, resetDisposableGameData } from "./sandbox";
+import { localOnlyConfig, removeRootDeployments, resetDisposableGameData } from "./sandbox";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -64,5 +64,38 @@ describe("local-only sandbox runs", () => {
     expect(localOnlyConfig(base, true)).toBe(base);
     const none = { ...base, apiKey: undefined };
     expect(localOnlyConfig(none, false)).toBe(none);
+  });
+});
+
+describe("removeRootDeployments", () => {
+  it("removes what an engine-injector deployment put beside Data, and nothing else", () => {
+    const game = fs.mkdtempSync(path.join(os.tmpdir(), "vortex-ai-rootdeploy-"));
+    dirs.push(game);
+    for (const name of ["Fallout4.exe", "f4se_loader.exe", "f4se_1_10_163.dll"])
+      fs.writeFileSync(path.join(game, name), "x");
+    fs.mkdirSync(path.join(game, "Data"));
+    fs.writeFileSync(path.join(game, "Data", "keep.esp"), "x");
+    fs.writeFileSync(
+      path.join(game, "vortex.deployment.dinput.json"),
+      JSON.stringify({
+        targetPath: game,
+        files: [
+          { relPath: "f4se_loader.exe" },
+          { relPath: "f4se_1_10_163.dll" },
+          { relPath: "Data/keep.esp" },
+          { relPath: "../outside.txt" },
+        ],
+      }),
+    );
+    fs.writeFileSync(path.join(path.dirname(game), "outside.txt"), "x");
+    dirs.push(path.join(path.dirname(game), "outside.txt"));
+
+    expect(removeRootDeployments(game).sort()).toEqual(
+      ["f4se_1_10_163.dll", "f4se_loader.exe", "vortex.deployment.dinput.json"].sort(),
+    );
+    expect(fs.readdirSync(game).sort()).toEqual(["Data", "Fallout4.exe"]);
+    // Data is the caller's to clear, and nothing outside the game folder is touched
+    expect(fs.existsSync(path.join(game, "Data", "keep.esp"))).toBe(true);
+    expect(fs.existsSync(path.join(path.dirname(game), "outside.txt"))).toBe(true);
   });
 });

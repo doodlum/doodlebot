@@ -6,6 +6,7 @@ import path from "node:path";
 import {
   ForkError,
   missingBuildOutputs,
+  nestedPath,
   needsShell,
   parsePnpmVersion,
   runStreaming,
@@ -91,4 +92,18 @@ it("finds every worker main's build script bundles that a build left out", () =>
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+it("gives a checkout's own scripts its pnpm, not the kit's", () => {
+  const sep = path.delimiter;
+  const repo = path.resolve("/kit");
+  const PATH = [
+    path.join(repo, "node_modules", ".bin"),
+    path.resolve("/Users/me/AppData/Local/npm-cache/_npx/abc/node_modules/.bin"),
+    path.resolve("/Windows/system32"),
+  ].join(sep);
+  expect(nestedPath(PATH, undefined, repo)).toBe(path.resolve("/Windows/system32"));
+  expect(nestedPath(PATH, path.resolve("/tools/node22/pnpm.cmd"), repo)).toBe(
+    [path.resolve("/tools/node22"), path.resolve("/Windows/system32")].join(sep),
+  );
 });

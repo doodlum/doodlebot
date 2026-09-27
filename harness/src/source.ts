@@ -94,9 +94,33 @@ export function childEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { CI: "1" };
   for (const [key, value] of Object.entries(process.env)) {
     if (/^(npm_|PNPM_|COREPACK_)/i.test(key)) continue;
-    if (value !== undefined) env[key] = value;
+    if (value === undefined) continue;
+    env[key] = key.toUpperCase() === "PATH" ? nestedPath(value) : value;
   }
   return env;
+}
+
+/**
+ * PATH for a command run inside a Vortex checkout. The kit runs under its own pnpm 9, and
+ * `pnpm run` / `npx pnpm@9` put that pnpm and this repo's `node_modules/.bin` first on PATH.
+ * A Vortex script that calls `pnpm` itself (the build's `assets` step does) then gets pnpm 9,
+ * which can't read pnpm 11's lockfile (ERR_PNPM_BROKEN_LOCKFILE). Drop those entries, and put
+ * `VORTEX_AI_PNPM`'s directory first when it names the checkout's pnpm.
+ */
+export function nestedPath(
+  value: string,
+  override: string | undefined = process.env.VORTEX_AI_PNPM,
+  repoRoot: string = REPO_ROOT,
+): string {
+  const kitBin = path.join(repoRoot, "node_modules", ".bin").toLowerCase();
+  const kept = value
+    .split(path.delimiter)
+    .filter((entry) => entry !== "")
+    .filter((entry) => !/[\\/]_npx[\\/]/i.test(entry))
+    .filter((entry) => path.resolve(entry).toLowerCase() !== kitBin);
+  const first =
+    override !== undefined && override.trim() !== "" ? [path.dirname(override.trim())] : [];
+  return [...first, ...kept.filter((entry) => !first.includes(entry))].join(path.delimiter);
 }
 
 /**
