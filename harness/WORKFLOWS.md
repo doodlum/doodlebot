@@ -85,17 +85,24 @@ A draft PR is not done until each of these is true and stated in its description
    commit and the same `--fresh` baseline, with the relevant opt-in check or scenario.
    Timings come from `--production` builds, so React runs as it does for users; `up` fails
    unless the renderer loaded production React (`automation_status.react`).
-2. **Vortex's full gate passes on the PR's exact commit.** Run `pnpm run verify`, and
+2. **A change to rendering, scrolling or input is measured for responsiveness, and a regression
+   blocks it.** On an otherwise idle machine, with a `--production` build of the base and the
+   head: the longest frame gap and the p95 during a scrollbar drag, a wheel flick and a track
+   click, and the longest task, over at least 3 runs a side (`ai:test:mods-scroll`, and a
+   per-frame drag probe). Then try it by hand. A fix that trades a visible bug for lag (blank rows
+   for a 9 fps drag) is not a fix, and "the machine was shared" is a reason to measure again, not to
+   open the PR.
+3. **Vortex's full gate passes on the PR's exact commit.** Run `pnpm run verify`, and
    confirm the formatter left the tree clean. Stop the harness instance first, because
    verify rewrites `src/main/build`.
-3. **The E2E suite has run** with the kit's runner, master first as the baseline:
+4. **The E2E suite has run** with the kit's runner, master first as the baseline:
    `pnpm run ai:vortex-e2e -- --owner <you> --checkout <dir>` on master, then the PR's head
    with `--compare <master report.json>`. It runs `packages/e2e` as CI does, with the
    fixture's startup race patched for the run only, and leaves out the account specs when
    their credentials are absent (they need Nexus test accounts and VPN). Report its
    regressions separately from pre-existing failures and the credential-skipped count,
    and give both HEAD shas.
-4. **An independent agent has reviewed it adversarially**: the whole diff, claims and
+5. **An independent agent has reviewed it adversarially**: the whole diff, claims and
    evidence, trying to break equivalence and find undisclosed behaviour changes. Fix or
    answer every confirmed point, then re-verify.
 

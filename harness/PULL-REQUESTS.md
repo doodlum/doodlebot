@@ -296,3 +296,8 @@ catch it.
     GraphQL API; the slug and revision are in vortex.log), and so are a user's `state.v2`
     values, from their state copy. (#17: no optional in the user's collection shared a name with a
     required member, so the name clash couldn't be what they saw.)
+16. **A fix that makes something laggy is not a fix.** Rendering work moved into a scroll or input
+    handler (`flushSync` in `onRowsScroll`) pays for itself in every frame. Measure interaction
+    on an idle machine before claiming the fix, and try it by hand. An author's "I can't tell on a
+    shared CPU" is a blocker to resolve, not a caveat to ship. (#20: rows stayed drawn during a
+    scrollbar drag, but the drag stepped at about 9 fps, and the user rejected it on first try.)
