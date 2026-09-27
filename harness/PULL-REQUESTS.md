@@ -163,7 +163,8 @@ Send it this brief, filled in:
 QA and review Vortex PR <url> (branch <branch>, head <sha>, base <base sha>). You did not write it.
 Assume it is wrong until your own testing shows otherwise. Read the checkout's AGENTS.md,
 CODESTYLE.md and docs/testing.md, and doodlebot's harness/AGENTS.md, KNOWLEDGE.md and
-harness/PULL-REQUESTS.md. Checkout: your own worktree <dir> (doodlebot/.vortex-worktrees/<qa-name>).
+harness/PULL-REQUESTS.md. Checkout: your own detached worktree <dir>, made with
+`worktree add <qa-name> --ref origin/<branch>` (the author's worktree has the branch checked out),  (doodlebot/.vortex-worktrees/<qa-name>).
 Do not commit, push, edit the PR, or edit doodlebot. Pass `--owner <qa-name> --worktree <qa-name>
 --slot auto` to every kit command (`up`, `down`; `vortex-e2e --checkout <dir>`); for the `ai:test:*` scripts set
 `VORTEX_AI_OWNER=<qa-name>` and `VORTEX_AI_SLOT=auto`. Take

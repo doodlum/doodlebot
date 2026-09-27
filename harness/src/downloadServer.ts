@@ -83,3 +83,73 @@ export async function startDownloadServer(options: DownloadServerOptions): Promi
       }),
   };
 }
+
+export interface ArchiveServerOptions {
+  /**
+   * Fail this request instead of serving it, by resetting the connection as a dropped
+   * download does: `attempt` counts the GETs for that file so far, from 1. Default: never.
+   */
+  fail?: (name: string, attempt: number) => boolean;
+}
+
+export interface ArchiveServer {
+  /** The URL a collection's direct member downloads the archive called `name` from. */
+  url: (name: string) => string;
+  /** Every request so far: method, file name, and whether it was failed. */
+  hits: Array<{ method: string; name: string; failed: boolean }>;
+  close: () => Promise<void>;
+}
+
+/**
+ * Serve real archives, for a collection's direct members (`DirectMember` in
+ * offlineCollection.ts), and fail chosen requests. A download that fails, then succeeds on a
+ * retry or resume, is how a member ended up wrongly ignored in the field; this reproduces it
+ * with no Nexus.
+ */
+export async function startArchiveServer(
+  archives: Record<string, Uint8Array>,
+  options: ArchiveServerOptions = {},
+): Promise<ArchiveServer> {
+  const sockets = new Set<import("node:net").Socket>();
+  const hits: ArchiveServer["hits"] = [];
+  const attempts = new Map<string, number>();
+  const server = http.createServer((req, res) => {
+    const name = decodeURIComponent((req.url ?? "/").slice(1).split("?")[0] ?? "");
+    const body = archives[name];
+    const method = req.method ?? "GET";
+    if (body === undefined) {
+      hits.push({ method, name, failed: false });
+      res.writeHead(404).end();
+      return;
+    }
+    const attempt = method === "GET" ? (attempts.get(name) ?? 0) + 1 : (attempts.get(name) ?? 0);
+    if (method === "GET") attempts.set(name, attempt);
+    const failed = method === "GET" && options.fail?.(name, attempt) === true;
+    hits.push({ method, name, failed });
+    if (failed) {
+      req.socket.destroy();
+      return;
+    }
+    res.writeHead(200, {
+      "content-type": "application/zip",
+      "content-length": String(body.length),
+      "content-disposition": `attachment; filename="${name}"`,
+    });
+    res.end(method === "HEAD" ? undefined : Buffer.from(body));
+  });
+  server.on("connection", (socket) => {
+    sockets.add(socket);
+    socket.on("close", () => sockets.delete(socket));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as AddressInfo;
+  return {
+    url: (name) => `http://127.0.0.1:${String(port)}/${encodeURIComponent(name)}`,
+    hits,
+    close: () =>
+      new Promise((resolve) => {
+        for (const socket of sockets) socket.destroy();
+        server.close(() => resolve());
+      }),
+  };
+}

@@ -105,6 +105,12 @@ export interface AddWorktreeOptions {
   base?: string;
   /** The branch to create, or to check out when it exists. Default: the name. */
   branch?: string;
+  /**
+   * Check out this ref (a branch, remote branch or sha) detached, with no branch of its own.
+   * For reviewing someone's branch: a branch another worktree has checked out can't be checked
+   * out again, and QA must not commit to the author's branch anyway. Overrides branch and base.
+   */
+  ref?: string;
   /** Install dependencies. Default true. */
   install?: boolean;
   /** Build it, so it can run. Default true; slow. */
@@ -119,27 +125,33 @@ export async function addWorktree(options: AddWorktreeOptions): Promise<Worktree
   if (fs.existsSync(dir))
     throw new ConfigError(`${dir} already exists. Use it with --worktree ${options.name}.`);
   const branch = options.branch ?? options.name;
-  const base = options.base ?? "upstream/master";
+  const base = options.ref ?? options.base ?? "upstream/master";
 
   if (base.startsWith("upstream/") || base.startsWith("origin/")) {
     const remote = base.split("/")[0]!;
     report(`fetching ${remote}`);
     await git(["-C", source, "fetch", remote]);
   }
-  const branchExists = await git(["-C", source, "branch", "--list", branch]).then(
-    (out) => out !== "",
-  );
-  report(
-    branchExists
-      ? `checking out the existing branch ${branch} in ${dir}`
-      : `creating ${branch} from ${base} in ${dir}`,
-  );
-  fs.mkdirSync(WORKTREES_DIR, { recursive: true });
-  await git(
-    branchExists
-      ? ["-C", source, "worktree", "add", dir, branch]
-      : ["-C", source, "worktree", "add", "-b", branch, dir, base],
-  );
+  if (options.ref !== undefined) {
+    report(`checking out ${options.ref} detached in ${dir}`);
+    fs.mkdirSync(WORKTREES_DIR, { recursive: true });
+    await git(["-C", source, "worktree", "add", "--detach", dir, options.ref]);
+  } else {
+    const branchExists = await git(["-C", source, "branch", "--list", branch]).then(
+      (out) => out !== "",
+    );
+    report(
+      branchExists
+        ? `checking out the existing branch ${branch} in ${dir}`
+        : `creating ${branch} from ${base} in ${dir}`,
+    );
+    fs.mkdirSync(WORKTREES_DIR, { recursive: true });
+    await git(
+      branchExists
+        ? ["-C", source, "worktree", "add", dir, branch]
+        : ["-C", source, "worktree", "add", "-b", branch, dir, base],
+    );
+  }
 
   if (options.install !== false) {
     // A build rewrites the API report and dependency report; a fresh worktree must not start

@@ -218,6 +218,8 @@ Parallel sessions (harness/AGENTS.md, "Parallel sessions")
   worktree add <name>    A Vortex worktree of .vortex-src for one session's work, in
                          .vortex-worktrees/<name>: [--base <ref>, default upstream/master]
                          [--branch <name>, default <name>] [--no-build] [--no-install]
+                         [--ref <branch|sha>: that ref detached, e.g. to review a branch
+                         another worktree has checked out]
   worktree list          The worktrees and their branches
   worktree remove <name> Remove one (refuses uncommitted changes without --force)
   --worktree <name>      Use that worktree as the target, like --dev-dir
@@ -908,6 +910,7 @@ async function worktreeCommand(positional: string[], flags: ParsedArgs["flags"])
         name,
         base: typeof flags.base === "string" ? flags.base : undefined,
         branch: typeof flags.branch === "string" ? flags.branch : undefined,
+        ref: typeof flags.ref === "string" ? flags.ref : undefined,
         install: flags["no-install"] !== true,
         build: flags["no-build"] !== true,
         onProgress: (m) => log(`  ${m}`),
@@ -928,7 +931,9 @@ Worktree ${worktree.name} on ${worktree.branch ?? "a detached HEAD"}: ${worktree
     }
     case "remove": {
       if (name === undefined) throw new ConfigError("worktree remove needs a name.");
-      log(`Removed ${await removeWorktree(name, flags.force === true)}; its branch is kept.`);
+      log(
+        `Removed ${await removeWorktree(name, flags.force === true)}; any branch it had is kept.`,
+      );
       return 0;
     }
     default:

@@ -78,6 +78,31 @@ export interface OfflineCollection {
   plugins?: CollectionPlugin[];
   /** Rules between members (`before`, `after`, `conflicts`, …), written as `modRules`. */
   modRules?: CollectionModRule[];
+  /** Members Vortex downloads from a URL (`startArchiveServer`), not from the archive. */
+  direct?: DirectMember[];
+}
+
+/**
+ * A member downloaded from a URL (`source.type: "direct"`), so a collection can exercise
+ * downloads, and download failures, with no Nexus. Serve its archive with
+ * `startArchiveServer` (downloadServer.ts), which can fail chosen requests.
+ */
+export interface DirectMember {
+  name: string;
+  version?: string;
+  url: string;
+  optional?: boolean;
+  /** Reference tag; defaults to one derived from the name. */
+  tag?: string;
+  /** What Vortex matches the download by. Default: the name. */
+  fileExpression?: string;
+  /**
+   * The file's logical name, as Nexus gives it. Two members sharing one ("Main File") is
+   * how a skip meant for one member once landed on another (KNOWLEDGE.md).
+   */
+  logicalFilename?: string;
+  /** The member's plugins as the collection lists them. Default: none. */
+  plugins?: CollectionPlugin[];
 }
 
 /** A reference in a collection's modRules: a tag, a fileExpression, a logicalFileName, … */
@@ -106,7 +131,13 @@ export function memberPlugins(member: BundledMember): CollectionPlugin[] {
 
 /** The collection.json Vortex's collection installer reads. */
 export function collectionManifest(collection: OfflineCollection): Record<string, unknown> {
-  const plugins = (collection.plugins ?? collection.members.flatMap(memberPlugins)).map((p) => ({
+  const direct = collection.direct ?? [];
+  const plugins = (
+    collection.plugins ?? [
+      ...collection.members.flatMap(memberPlugins),
+      ...direct.flatMap((member) => member.plugins ?? []),
+    ]
+  ).map((p) => ({
     name: p.name,
     enabled: p.enabled !== false,
   }));
@@ -119,18 +150,36 @@ export function collectionManifest(collection: OfflineCollection): Record<string
       installInstructions: "",
       domainName: collection.gameId,
     },
-    mods: collection.members.map((member) => ({
-      name: member.name,
-      version: member.version ?? "1.0.0",
-      optional: member.optional === true,
-      domainName: collection.gameId,
-      source: {
-        type: "bundle",
-        fileExpression: member.fileExpression ?? bundleName(member),
-        updatePolicy: "exact",
-        tag: member.tag ?? `vortex-mcp-${member.name}`,
-      },
-    })),
+    mods: [
+      ...collection.members.map((member): Record<string, unknown> => ({
+        name: member.name,
+        version: member.version ?? "1.0.0",
+        optional: member.optional === true,
+        domainName: collection.gameId,
+        source: {
+          type: "bundle",
+          fileExpression: member.fileExpression ?? bundleName(member),
+          updatePolicy: "exact",
+          tag: member.tag ?? `vortex-mcp-${member.name}`,
+        },
+      })),
+      ...direct.map((member): Record<string, unknown> => ({
+        name: member.name,
+        version: member.version ?? "1.0.0",
+        optional: member.optional === true,
+        domainName: collection.gameId,
+        source: {
+          type: "direct",
+          url: member.url,
+          fileExpression: member.fileExpression ?? member.name,
+          updatePolicy: "exact",
+          tag: member.tag ?? `vortex-mcp-${member.name}`,
+          ...(member.logicalFilename === undefined
+            ? {}
+            : { logicalFilename: member.logicalFilename }),
+        },
+      })),
+    ],
     modRules: collection.modRules ?? [],
     ...(plugins.length > 0 ? { plugins, pluginRules: { plugins: [], groups: [] } } : {}),
   };
@@ -910,4 +959,30 @@ export async function reviewDialogsFor(
   return (state.dialogs ?? []).filter(
     (d) => d.step === "review" && d.collectionId === collectionModId,
   ).length;
+}
+
+/**
+ * Close every open collection review (Done, Close or No Thanks), waiting while its buttons
+ * are still disabled. A review left open by an earlier script or a resume makes the next
+ * `installOfflineCollection` find no Install Now dialog. Returns how many it closed.
+ */
+export async function closeCollectionReviews(
+  mcp: VortexMcpClient,
+  timeoutMs = 60_000,
+): Promise<number> {
+  const deadline = Date.now() + timeoutMs;
+  let closed = 0;
+  for (;;) {
+    const review = ((await openDialogs(mcp)) ?? []).find((d) =>
+      /collection installation (complete|incomplete)/i.test(d),
+    );
+    if (review === undefined) return closed;
+    if (Date.now() > deadline)
+      throw new Error(`A collection review would not close: ${review.slice(0, 200)}`);
+    const clicked = await clickInsideDialog(mcp, review, /^(done|close|no thanks)$/i, {
+      required: false,
+    }).catch(() => undefined);
+    if (clicked !== undefined) closed++;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
 }

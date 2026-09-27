@@ -41,6 +41,7 @@
     "ai:test:nexus": "tsx harness/src/tests/nexus-collection.e2e.ts",
     "ai:test:large-library": "tsx harness/src/tests/large-library.e2e.ts",
     "ai:test:bethesda": "tsx harness/src/tests/bethesda.e2e.ts",
+    "ai:test:collection-download-retry": "tsx harness/src/tests/collection-download-retry.e2e.ts",
     "ai:test:collection-scale": "tsx harness/src/tests/collection-scale.e2e.ts",
     "ai:test:parallel-sessions": "tsx harness/src/tests/parallel-sessions.e2e.ts",
     "ai:test:plugins-mod-link": "tsx harness/src/tests/plugins-mod-link.e2e.ts",

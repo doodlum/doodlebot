@@ -130,6 +130,8 @@ pnpm run ai -- worktree remove fix-a                       # the branch stays
 - **Worktrees** (`worktree.ts`) of `.vortex-src` share its object store. `add` fetches the base
   (default `upstream/master`), creates `--branch` (default the name) or checks out an existing one,
   then installs and builds with the pinned pnpm (`--no-install`, `--no-build`). `--worktree <name>`
+  To review a branch another worktree has checked out, `worktree add <name> --ref origin/<branch>`
+  makes a detached worktree at it (QA must not commit to the author's branch anyway).
   on any command means `--dev-dir` for it. `remove` refuses while a Vortex runs from it, or with
   uncommitted changes unless `--force`.
 - Shared by all: `dist/` (the orchestrator builds the extension once), the pnpm store, the CPU.
@@ -380,6 +382,13 @@ cache (Documents moved by a `NODE_OPTIONS=--require` preload, `mainPreload.ts`).
 - **Manifest**: `optional` members (a `recommends` rule); `plugins: [{ name, enabled }]`, by
   default every root `.esp/.esm/.esl` enabled (the gamebryo parser throws without it,
   KNOWLEDGE.md); `modRules` between members; a member `fileExpression` overrides its bundle name.
+- **Direct members** (`direct: [{ name, url, optional?, tag?, logicalFilename?, plugins? }]`)
+  download from a URL instead of the archive. Serve them with `startArchiveServer(archives,
+{ fail })` (`downloadServer.ts`, `kit.downloads`): `fail(name, attempt)` resets that GET's
+  connection. Vortex retries a failed download itself (4 GETs in all), so to make a member fail,
+  fail it until the install ends, then stop failing and `resumeViaNotification` (the round trip is
+  `ai:test:collection-download-retry`). `closeCollectionReviews(mcp)` closes any review a script or a
+  resume left open; one left open makes the next install find no Install Now.
 - `addOfflineCollection` registers the archive as a download and runs `start-install-download`, so
   the mod has an `archiveId`; `via: "file"` uses `start-install <path>` instead.
 - `gameVersions: [MISMATCHED_GAME_VERSION]` makes Install Now show "Game version mismatch" (and
@@ -461,6 +470,7 @@ Outside `ai:test`; each writes JSON evidence (and screenshots or a `.cpuprofile`
 | --------------------------------------------------------- | ---------------------------------- | --------------------------------------------------------------------------- |
 | `ai:test:collection-scale -- --members <n>`               | sandbox                            | a freeze over 10 s in a phase                                               |
 | `ai:test:plugins-page -- --plugins <n> [--vortex-order]`  | fake Fallout 4                     | blocking on scroll, filter, clear or toggle; a row not following its toggle |
+| `ai:test:collection-download-retry`                       | fake Fallout 4                     | a member whose downloads failed not being installed by a resume             |
 | `ai:test:plugins-mod-link -- --mods <n>`                  | fake Fallout 4                     | the Mod link not scrolling the last-sorted mod (default 300) into view      |
 | `ai:test:download-churn -- --downloads <n> --seconds <s>` | any                                | nothing; measures persist:diff, slow writes, dispatches, long tasks         |
 | `ai:test:large-library`                                   | sandbox                            | see below                                                                   |

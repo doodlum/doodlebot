@@ -92,6 +92,38 @@ describe("the collection manifest", () => {
     ).toMatchObject({ fileExpression: "Bundled - lib-0001?*" });
     expect(collectionManifest({ name: "C", gameId: "g", members: [] }).modRules).toEqual([]);
   });
+
+  it("writes direct members, downloaded from a URL, after the bundled ones", () => {
+    const manifest = collectionManifest({
+      name: "C",
+      gameId: "fallout4",
+      members: [{ name: "Anchor", files: { "Anchor.esp": "x" } }],
+      direct: [
+        {
+          name: "Required",
+          url: "http://127.0.0.1:1/Required.zip",
+          logicalFilename: "Main File",
+          plugins: [{ name: "Required.esp" }],
+        },
+        { name: "Optional", url: "http://127.0.0.1:1/Optional.zip", optional: true },
+      ],
+    }) as { mods: Array<{ name: string; optional: boolean; source: Record<string, string> }> };
+    expect(manifest.mods.map((m) => m.name)).toEqual(["Anchor", "Required", "Optional"]);
+    expect(manifest.mods[1]?.source).toEqual({
+      type: "direct",
+      url: "http://127.0.0.1:1/Required.zip",
+      fileExpression: "Required",
+      updatePolicy: "exact",
+      tag: "vortex-mcp-Required",
+      logicalFilename: "Main File",
+    });
+    expect(manifest.mods[2]?.optional).toBe(true);
+    expect(manifest.mods[2]?.source.logicalFilename).toBeUndefined();
+    expect((manifest as unknown as { plugins: Array<{ name: string }> }).plugins).toEqual([
+      { name: "Anchor.esp", enabled: true },
+      { name: "Required.esp", enabled: true },
+    ]);
+  });
 });
 
 describe("updating an offline collection", () => {

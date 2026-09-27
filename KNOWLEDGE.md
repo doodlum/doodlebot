@@ -211,8 +211,11 @@ one ran, click Play and read Vortex's log: a sandbox's stand-in executables fail
 
 A user's `state.v2` folder is a LevelDB copy of their Vortex state. Read it, never in place and
 never their original, with `leveldown` from a Vortex checkout's `node_modules`, over a copy of
-the folder. In the launcher report it showed `tools.pinned.skyrimse.skse64=true` and no
-`primaryTool`: the user had pinned SKSE, not made it the launcher.
+the folder (set `NODE_PATH=<checkout>\src\main\node_modules` so `levelup`/`leveldown` resolve).
+In the launcher report it showed `tools.pinned.skyrimse.skse64=true`, and a
+`primaryTool.skyrimse = "skse64"` written only at the restart that "fixed" it: the user had
+pinned SKSE, and the launcher was set by activation after the restart, not before. Check the
+timestamps as well as the values.
 
 ### `activate-game` is a dead end for a game with no profile
 
@@ -416,6 +419,17 @@ skips optional members by default; `optionals: "stand-in"` exercises the review 
 optionals pass without installing them. A test that needs real optional installs should expect
 the stall and say so.
 
+### A skip meant for an optional member can land on a required one
+
+At install start `InstallDriver.start` marks each optional member with no ignore choice as
+skipped through `markCollectionMemberSkipped` (`util/collectionSkip.ts`). It accepted the first
+member whose tag, file hash **or** logical file name matched, so a required member listed earlier
+that shares a logical file name ("Main File" is common) or an archive hash got a durable
+`rule.ignored = true`, with nothing logged. An ignored member counts as resolved: the review says
+complete, and every later resume skips it. It looks like "a failed download got ignored", but a
+transient failure alone leaves the member failed, and a resume installs it. Check the rules'
+`ignored` flags before blaming downloads; the fix (doodlum/Vortex#17) matches by tag first.
+
 ### After a completed collection, Vortex stops running its checks
 
 `InstallDriver.startInstall` suppresses `plugins-changed`, `mod-installed`, `mod-activated` and
@@ -529,6 +543,8 @@ JSON through `readJsonFile` (`harness/src/jsonFile.ts`), which strips it; new re
   of a PR body turns 🤖, "→" and "–" into `Ã°Å¸`-style mojibake, and GitHub keeps it. Edit bodies
   with Node (`fs.readFileSync(f, "utf8")`) or `-Encoding UTF8`, then grep the result for `Ã`.
   `Set-Content -Encoding utf8` also adds a BOM, which breaks `package.json` for pnpm.
+- PowerShell 5.1's `ConvertFrom-Json` on `gh … --json` output can fold an array into one object.
+  Filter with `gh`'s own `--jq` instead.
 - Node one-liners through `bash -c`/heredocs lose backslashes: `"\r?\n"` in a regex, or
   `J:\tools\...`, come out as raw control characters. Put anything with escapes in a script file.
 
