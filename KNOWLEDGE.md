@@ -589,6 +589,20 @@ roomy drive, install `pnpm@11.10.0` globally into that prefix, prepend
 fail with ENOENT in `pnpm-cache\dlx` on a nearly full C:. A hand-run build must restore
 `etc/vortex.api.md` and `etc/Dependency Report.md` itself; only the kit's `build` does.
 
+### Windows on ARM: Vortex's native modules need x64 Node and a compiler
+
+On an ARM64 machine, Vortex tests fail with `Cannot find module './build/Release/winapi'` and
+`pnpm install` fails in `loot` or `font-scanner`. The native modules install with
+`prebuild-install -a x64`, and `winapi-bindings`, `loot` and `bsatk` (pinned Nexus-Mods commits)
+have no published prebuilds ("No prebuilt binaries found"), so node-gyp compiles them;
+`font-scanner` always does. ARM64 Node can't load an x64 addon either way. Run Vortex x64 under
+emulation: unzip nodejs.org's `win-x64` build of `devEngines`' exact version (pnpm then uses it
+instead of downloading its own), put it first on `PATH` and run `corepack enable pnpm` in it
+(`src/main`'s postinstall runs a bare `pnpm`). Then install the toolchain from Vortex's
+`docs/install-instructions/windows.md`: VS 2022 Build Tools (C++ workload, v143 x64/x86, ATL,
+MFC, Windows 11 SDK), Python with `setuptools`, CMake, .NET 9. ARM64 builds of Python, CMake
+and .NET are fine. Electron then downloads as x64; `eval --expr "process.arch"` should say `x64`.
+
 ### PowerShell's UTF-8 writes start with a BOM
 
 PowerShell 5.1's `Set-Content`/`Out-File -Encoding utf8` write a byte-order mark: `git commit -F`
