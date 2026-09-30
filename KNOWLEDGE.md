@@ -207,7 +207,9 @@ keep `pnpm run tailwind:watch` running, which writes there directly. Check a cla
 With about 4 GB of RAM, and other work running, `build` fails with "JavaScript heap out of memory"
 in one or two `typecheck` tasks, while `src/main/build` already holds `main.cjs`, the renderer
 bundle, the bundled plugins and the CSS, and `up` works. Treat the build as usable but the gate as
-not run: typecheck the failing projects alone, or rerun on an idle machine.
+not run: typecheck the failing projects alone, or rerun on an idle machine. With most tasks in the
+nx cache it doesn't happen; for a full `verify`, see "Under x64 emulation, `pnpm run verify` runs
+out of memory…" (`NX_PARALLEL=2`).
 
 ### Getting code into Vortex's main process
 
@@ -330,6 +332,27 @@ them with `clickInsideDialog` (scoped snapshots).
 `HTMLElement.click()` sends only `click`, while dropdown toggles and row selection listen on
 `mousedown` (`ui_click` sends the full sequence), and after `el.value = …` React swallows the
 `input` event (`ui_fill` calls the prototype's native setter first).
+
+### Title bar drag regions: happy-dom can't see them, Windows can
+
+A Vortex unit test that asserts `-webkit-app-region` reads `null`: happy-dom drops the property
+from `style`. Check drag regions in the app instead, without moving the operator's cursor: send
+`WM_NCHITTEST` (and `WM_NCLBUTTONDBLCLK` for double-click to maximize) to Vortex's window from
+PowerShell. On a scaled display call `SetThreadDpiAwarenessContext(-4)` first; otherwise the
+coordinates come out halved and the right half of the bar reads as the resize border (code 11).
+
+### Layout at its limits: preview-only UI, account states, zoom, measurements
+
+- The STAGING pill renders only in preview builds. Set `process.env.IS_VORTEX_PREVIEW = "true"` in
+  the renderer and re-render the header (toggling the menu collapse button twice does it); delete
+  the variable afterwards.
+- Zoom with `vortex_dispatch` `setZoomFactor` plus `webFrame.setZoomFactor`, and restore 1 after.
+- `innerWidth` is an integer while layout is fractional, so an edge check against it can report a
+  control as clipped by under a pixel. Use `document.documentElement.getBoundingClientRect().width`.
+- `document.body.focus()` doesn't reset where Tab starts in Chromium. Focus the first control, then
+  press Tab.
+- A reload straight after `SET_USE_MODERN_LAYOUT false` can come back in the modern layout while
+  the state already reads false. Reload again after a few seconds, and check which layout rendered.
 
 ### A button's accessible name is not its text
 
@@ -658,7 +681,8 @@ timeout. `start-download` takes `redownload` and `{ allowInstall: false }` after
 On Windows on ARM, the first `up` of a new cache can fail with "Vortex did not exit cleanly"
 though Vortex's log says "clean application end": the bootstrap's quit takes longer than
 `stopInstance` waits. The retry can then fail with "Port … is occupied", held only by `TIME_WAIT`
-sockets from that quit. A third `up` works. Retry rather than clearing leases or killing processes.
+sockets from that quit. A third `up` works; other times the first one does. Retry rather than
+clearing leases or killing processes.
 
 ### PowerShell's UTF-8 writes start with a BOM
 
@@ -699,9 +723,14 @@ JSON through `readJsonFile` (`harness/src/jsonFile.ts`), which strips it; new re
 - A `doodlebot script` that ends with `await handle.close()` on an `attachToRenderer` handle can
   stay alive after writing its results. End it with `setTimeout(() => process.exit(0), 3000)`
   before `void handle.close()`.
-- `gh pr edit --body-file body.md --attach ./clip.webm` rewrote `![alt](./shot.png)` in place,
-  but left a bare `./clip.webm` line as it was and appended the video's URL after the doodlebot
-  footer. Move each URL onto its line and edit the body again, so the footer stays last.
+- `gh pr edit --body-file body.md --attach ./clip.webm` (and `gh pr create` with the same flags)
+  rewrote `![alt](./shot.png)` in place, but left a bare `./clip.webm` line as it was and appended
+  the video's URL after the doodlebot footer, in `--attach` order. Move each URL onto its line and
+  edit the body again, so the footer stays last.
+- `doodlebot script` passes flags it doesn't use itself, such as `--sandbox`, on to the script,
+  which may take them for its own arguments (a label of `--sandbox`). Give the script its
+  arguments first, or read them by name.
+- On Windows `python3` can be the Microsoft Store alias while `python` is the installed one.
 
 ### tsx: a scratch script can't import the kit by path, and `page.evaluate` loses `__name`
 

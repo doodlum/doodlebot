@@ -313,3 +313,9 @@ catch it.
 19. **When a stacked branch takes in a simplification, search its docs for what was dropped.**
     Code that the merge removes can still be described in the branch's own design notes. (#13
     after #22: `docs/design-system/panels.md` still described the outlined profile button.)
+20. **Test a layout that shares space at its limits, and again after each fix.** Take it to the
+    narrowest window and the highest zoom, with preview-only UI shown, in each account state
+    (premium, free, signed out), and with longer and CJK stand-ins for its labels. A fix for one
+    limit can move the problem to another. (#23: the controls covered the centered version at
+    150% in a preview build; the first fix let translated labels wrap inside the bar; and a free
+    account's wider Go premium made the Help submenu open to the other side.)
