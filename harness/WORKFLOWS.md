@@ -66,6 +66,14 @@ under the instance lease, and `doodlebot eval --expr "<js>"` inspects a harness 
 "Scratch scripts and renderer diagnostics" in AGENTS.md). Their results are leads; the check
 that settles a question is the one added to the kit.
 
+An A/B of a renderer-only change, when base and head share the main process: in one checkout,
+`git checkout --detach <sha>`, rebuild `src/renderer` (`pnpm exec webpack --config
+./webpack.config.cjs`) and the CSS (`pnpm run tailwind` in `src/stylesheets`, then copy
+`dist/tailwind-v4.css` to `src/main/build/assets/css/`), reload with `eval --expr
+"location.reload()"`, and capture both sides with one script. It saves a second full build. Set
+`webFrame.setZoomFactor(1)` and blur focus first, so a saved zoom level or a focus ring left by a
+previous step doesn't differ between the sides.
+
 Timing a change that affects rendering: compare against an in-build control that the change
 does not touch. For the Mods table that is the classic layout. Another page is no control, since
 the Mods page stays mounted while hidden (KNOWLEDGE.md).

@@ -193,6 +193,22 @@ another way (an exported reset, a bound argument), or delete
 killed. Long steps stream. Likewise a check piped through `Select-String` or `Select -Last` shows
 nothing until it exits: tee to a file, or watch the game directory and `list_notifications`.
 
+### A renderer-only rebuild leaves Tailwind stale
+
+After `pnpm exec webpack` in `src/renderer` and a reload, a new utility class does nothing: a
+`bg-*` stays transparent, a `w-*` slot measures 0. The page loads `css/tailwind-v4.css`, which
+`src/stylesheets` builds separately (`pnpm run tailwind` writes `dist/tailwind-v4.css`) and the
+full build copies to `src/main/build/assets/css/`. Run it and copy the file before reloading, or
+keep `pnpm run tailwind:watch` running, which writes there directly. Check a class exists with
+`[...document.styleSheets]` before blaming the component.
+
+### On a small-memory machine `build` exits 1 with a usable build
+
+With about 4 GB of RAM, and other work running, `build` fails with "JavaScript heap out of memory"
+in one or two `typecheck` tasks, while `src/main/build` already holds `main.cjs`, the renderer
+bundle, the bundled plugins and the CSS, and `up` works. Treat the build as usable but the gate as
+not run: typecheck the failing projects alone, or rerun on an idle machine.
+
 ### Getting code into Vortex's main process
 
 - `--inspect-brk` hangs every install: workers inherit break-on-start and Vortex hashes archives
@@ -603,6 +619,22 @@ instead of downloading its own), put it first on `PATH` and run `corepack enable
 MFC, Windows 11 SDK), Python with `setuptools`, CMake, .NET 9. ARM64 builds of Python, CMake
 and .NET are fine. Electron then downloads as x64; `eval --expr "process.arch"` should say `x64`.
 
+### With corepack, `lease run` from a checkout picks the checkout's pnpm
+
+`pnpm --dir <kit> run ai -- lease run -- pnpm run verify`, started in a Vortex checkout, fails
+with "This project is configured to use 9.15.0 of pnpm": corepack chooses pnpm by the directory
+it starts in, so the kit runs under Vortex's pnpm 11. Started in the kit instead, the command runs
+in the kit, since pnpm overwrites `INIT_CWD` (`callerCwd` in `leaseCommand.ts`). Run the kit's CLI
+directly from the checkout: `node <kit>/node_modules/tsx/dist/cli.mjs <kit>/harness/src/cli.ts
+lease run --owner <you> --checkout <dir> -- pnpm run verify`.
+
+### Under x64 emulation, a cold `up` can fail twice before it works
+
+On Windows on ARM, the first `up` of a new cache can fail with "Vortex did not exit cleanly"
+though Vortex's log says "clean application end": the bootstrap's quit takes longer than
+`stopInstance` waits. The retry can then fail with "Port … is occupied", held only by `TIME_WAIT`
+sockets from that quit. A third `up` works. Retry rather than clearing leases or killing processes.
+
 ### PowerShell's UTF-8 writes start with a BOM
 
 PowerShell 5.1's `Set-Content`/`Out-File -Encoding utf8` write a byte-order mark: `git commit -F`
@@ -636,6 +668,15 @@ JSON through `readJsonFile` (`harness/src/jsonFile.ts`), which strips it; new re
   Filter with `gh`'s own `--jq` instead.
 - Node one-liners through `bash -c`/heredocs lose backslashes: `"\r?\n"` in a regex, or
   `J:\tools\...`, come out as raw control characters. Put anything with escapes in a script file.
+- `pnpm run ai:test:zoom | tail -15` can hang after the test exits: a process it started keeps
+  the pipe open, and `tail` prints only at end of input, so the result is lost. Redirect to a
+  file (`> log 2>&1`) and read it.
+- A `doodlebot script` that ends with `await handle.close()` on an `attachToRenderer` handle can
+  stay alive after writing its results. End it with `setTimeout(() => process.exit(0), 3000)`
+  before `void handle.close()`.
+- `gh pr edit --body-file body.md --attach ./clip.webm` rewrote `![alt](./shot.png)` in place,
+  but left a bare `./clip.webm` line as it was and appended the video's URL after the doodlebot
+  footer. Move each URL onto its line and edit the body again, so the footer stays last.
 
 ### tsx: a scratch script can't import the kit by path, and `page.evaluate` loses `__name`
 
@@ -652,5 +693,6 @@ defines it in the page (`NAME_SHIM`, `cdp.ts`), and kit modules send source text
 gh 2.31 queries the removed `projectCards`, so `gh pr edit` fails with "Projects (classic) is
 being deprecated". Use `gh api -X PATCH repos/<owner>/<repo>/pulls/<n> -F "body=@<file>"`, or the
 kit's portable gh (`harness/.artifacts/gh-portable/bin/gh.exe`). Its `gh pr edit --attach` uploads
-`.webm` as inline video; pass the bare path (no `#alt text`) from the files' directory so
-`./file.webm` references are rewritten.
+`.webm` as inline video; pass the bare path (no `#alt text`) from the files' directory. Check the
+body afterwards: a bare `./file.webm` line may be left as it was, with the URL appended at the end
+("Other shell traps").

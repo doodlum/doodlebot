@@ -301,3 +301,15 @@ catch it.
     on an idle machine before claiming the fix, and try it by hand. An author's "I can't tell on a
     shared CPU" is a blocker to resolve, not a caveat to ship. (#20: rows stayed drawn during a
     scrollbar drag, but the drag stepped at about 9 fps, and the user rejected it on first try.)
+17. **Moving a control moves everything anchored to it.** A menu, submenu or tooltip placed
+    relative to the moved control, with a flip when it doesn't fit, can open on another side. Open
+    each one on the base and the head and compare their boxes before writing "nothing else
+    changes". (#22: moving Profile left gave its Help submenu room to open right; on master it
+    always flipped left.)
+18. **A layout test pins the structure that makes the spacing, not just the order.** Mutate the
+    markup the way a plausible mistake would (move an element out of its group, swap it with a
+    divider, delete the divider) and check each makes the test fail. (#22: an order-only test
+    passed all three.)
+19. **When a stacked branch takes in a simplification, search its docs for what was dropped.**
+    Code that the merge removes can still be described in the branch's own design notes. (#13
+    after #22: `docs/design-system/panels.md` still described the outlined profile button.)
