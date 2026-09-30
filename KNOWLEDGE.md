@@ -636,6 +636,14 @@ was installed by the x64 one. Nothing needs reinstalling. Put the x64 Node direc
 `PATH` for the session (`$env:PATH = "C:\dev\tools\node-v24.20.0-win-x64;$env:PATH"`, or
 wherever it was unzipped); its `pnpm` shim comes with it.
 
+### Under x64 emulation, `pnpm run verify` runs out of memory unless nx runs fewer tasks
+
+On Windows on ARM, Vortex's `verify` fails with a dozen typecheck, build and lint tasks dying of
+"JavaScript heap out of memory" (exit 134): nx's default parallelism runs more emulated Node
+processes than memory allows. With `$env:NX_PARALLEL = "2"` the same tree passes. Under that
+load, BG3's `divineCore end-to-end` can still time out (`DivineTimedOut`, an external .NET
+process); run it alone from `extensions/games/game-baldursgate3` before calling it a regression.
+
 ### A zero-filled `.zip` download ends in an "Archive damaged" dialog
 
 With **Settings → Download → Install automatically** on (the default), a finished download is
