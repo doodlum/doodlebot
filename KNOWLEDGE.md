@@ -628,6 +628,23 @@ in the kit, since pnpm overwrites `INIT_CWD` (`callerCwd` in `leaseCommand.ts`).
 directly from the checkout: `node <kit>/node_modules/tsx/dist/cli.mjs <kit>/harness/src/cli.ts
 lease run --owner <you> --checkout <dir> -- pnpm run verify`.
 
+### Windows on ARM: "You installed esbuild for another platform" means the wrong Node
+
+On an ARM64 machine set up as above, every `pnpm run ai` fails with that esbuild error, or with
+`pnpm` not found: a new shell has the ARM64 Node first on `PATH`, while the kit's `node_modules`
+was installed by the x64 one. Nothing needs reinstalling. Put the x64 Node directory first on
+`PATH` for the session (`$env:PATH = "C:\dev\tools\node-v24.20.0-win-x64;$env:PATH"`, or
+wherever it was unzipped); its `pnpm` shim comes with it.
+
+### A zero-filled `.zip` download ends in an "Archive damaged" dialog
+
+With **Settings → Download → Install automatically** on (the default), a finished download is
+installed, and a file that isn't really an archive puts up "Archive damaged" (Cancel, Delete,
+Continue), which Escape does not close. It hides the spine and fails later clicks with a locator
+timeout. `start-download` takes `redownload` and `{ allowInstall: false }` after the callback;
+`slow-download` and `download-churn` pass them. Clear one left over with
+`clickInsideDialog(mcp, "Archive damaged", "Cancel")`.
+
 ### Under x64 emulation, a cold `up` can fail twice before it works
 
 On Windows on ARM, the first `up` of a new cache can fail with "Vortex did not exit cleanly"

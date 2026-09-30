@@ -268,6 +268,11 @@ pnpm run ai -- purge
 pnpm run ai -- e2e <collection-url> [--runs <n>] [--keep] [--purge] [--no-launch]
 ```
 
+- `slow-download [--count <n>] [--seconds <n>] [--stagger <s>]` keeps real downloads in flight
+  (throttled local files, no network or account) for work on the UI that reports them: the
+  spine's download button and panel, the Downloads page. It returns when they finish, so run it
+  in the background and drive the UI meanwhile. `--stagger` starts each after the one before, so
+  a UI that announces arrivals sees them separately. Scripts: `kit.slowDownload`.
 - `install` waits for the installer; `collection` checks OAuth first and waits for required
   members. FOMODs take defaults; unexpected dialogs stay visible. Add a scoped helper with a test
   when a workflow needs an answer, never a global guess.

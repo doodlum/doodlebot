@@ -50,7 +50,11 @@ try {
       const name = `churn-${stamp}-${String(i)}.zip`;
       return mcp.call(
         "vortex_dispatch",
-        { action: "start-download", args: [[server.url(name)], {}, name, "__CALLBACK__"] },
+        {
+          action: "start-download",
+          // Zero-filled files: never auto-install them (slowDownload.ts).
+          args: [[server.url(name)], {}, name, "__CALLBACK__", "always", { allowInstall: false }],
+        },
         (seconds + 120) * 1000,
       );
     }),

@@ -50,6 +50,7 @@ import { requireOAuth, waitForOAuth, type AuthStatus } from "./auth";
 import { localOnlyConfig, sandboxConfig } from "./sandbox";
 import { bethesdaSandboxConfig, isolateUserFolders } from "./bethesdaSandbox";
 import { installLocalMod } from "./localMod";
+import { runSlowDownloads } from "./slowDownload";
 import { installCollection } from "./collections";
 import { deployMods, needsDeployment, purgeGame } from "./deployment";
 import { runE2e } from "./e2e";
@@ -267,6 +268,9 @@ Driving a running instance
                          VORTEX_AI_KIT holds the import URL of harness/src/kit.ts
   record                 Save WebM; --ffmpeg <path> --seconds <1-60> --label <name>
   install <archive>      Install local ZIP/7z through Vortex; no account needed
+  slow-download          Real Vortex downloads of throttled local files, for download UI
+                         work; returns once they finish (run it in the background)
+    --count <n> --seconds <n> --stagger <s>   (defaults 1, 30, 0)
   collection <url>       Install exact Nexus collection/revision using OAuth
   deploy                 Deploy enabled mods for the active game
     --purge              Permit purging a foreign deployment in a disposable game
@@ -389,6 +393,18 @@ async function main(): Promise<number> {
       const file = positional[0];
       if (!file) throw new ConfigError("install needs the path to a local mod archive.");
       log(JSON.stringify(await installLocalMod(await requireRunning(config), file), null, 2));
+      return 0;
+    }
+    case "slow-download": {
+      const number = (name: string, fallback: number) =>
+        typeof flags[name] === "string" ? Number(flags[name]) : fallback;
+      const result = await runSlowDownloads(await requireRunning(config), {
+        count: number("count", 1),
+        seconds: number("seconds", 30),
+        staggerSeconds: number("stagger", 0),
+        onStarted: (name) => log(`started ${name}`),
+      });
+      log(JSON.stringify(result, null, 2));
       return 0;
     }
     case "setup": {
